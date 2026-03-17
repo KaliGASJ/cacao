@@ -48,7 +48,7 @@ pip install -r requirements.txt
 
 El pipeline es extremadamente sencillo. Todo se hace desde la terminal con tu entorno activado:
 
-**Paso 1: Repartir las fotos**
+### Paso 1: Repartir las fotos
 
 ```bash
 python3 preparar_datos.py
@@ -56,7 +56,7 @@ python3 preparar_datos.py
 
 *(Se creará una carpeta oculta a Github llamada `dataset_cacao`)*
 
-**Paso 2: Poner a estudiar a la IA**
+### Paso 2: Poner a estudiar a la IA
 
 ```bash
 python3 entrenar.py

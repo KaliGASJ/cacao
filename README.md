@@ -49,7 +49,7 @@ pip install -r requirements.txt
 
 To run the full end-to-end pipeline, follow these exact steps from your terminal:
 
-**Step 1: Data Preparation**
+### Step 1: Data Preparation
 
 ```bash
 python3 preparar_datos.py
@@ -57,7 +57,7 @@ python3 preparar_datos.py
 
 *Expected Output: "Estructura lista en 'dataset_cacao' para entrenar con YOLO."*
 
-**Step 2: Model Training & Evaluation**
+### Step 2: Model Training & Evaluation
 
 ```bash
 python3 entrenar.py
