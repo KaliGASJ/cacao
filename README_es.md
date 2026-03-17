@@ -54,7 +54,7 @@ El pipeline es extremadamente sencillo. Todo se hace desde la terminal con tu en
 python3 preparar_datos.py
 ```
 
-*(Se creará una carpeta oculta a Github llamada `dataset_cacao`)*
+> *(Se creará una carpeta oculta a Github llamada `dataset_cacao`)*
 
 ### Paso 2: Poner a estudiar a la IA
 
@@ -62,7 +62,7 @@ python3 preparar_datos.py
 python3 entrenar.py
 ```
 
-*(Pasa por un café. Cuando terminen las épocas de entrenamiento, busca la carpeta nueva `runs/`. Adentro están las gráficas y la matriz de confusión resultantes del modelo).*
+> *(Pasa por un café. Cuando terminen las épocas de entrenamiento, busca la carpeta nueva `runs/`. Adentro están las gráficas y la matriz de confusión resultantes del modelo).*
 
 ---
 

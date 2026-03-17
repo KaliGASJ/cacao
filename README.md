@@ -55,7 +55,7 @@ To run the full end-to-end pipeline, follow these exact steps from your terminal
 python3 preparar_datos.py
 ```
 
-*Expected Output: "Estructura lista en 'dataset_cacao' para entrenar con YOLO."*
+> **Expected Output:** "Estructura lista en 'dataset_cacao' para entrenar con YOLO."
 
 ### Step 2: Model Training & Evaluation
 
@@ -63,7 +63,7 @@ python3 preparar_datos.py
 python3 entrenar.py
 ```
 
-*Expected Output: After epochs are completed, results (including loss graphs and confusion matrix) will be automatically generated and exported to `runs/classify/resultados_cacao/modelo_refinado/`.*
+> **Expected Output:** After epochs are completed, results (including loss graphs and confusion matrix) will be automatically generated and exported to `runs/classify/resultados_cacao/modelo_refinado/`.
 
 ---
 
