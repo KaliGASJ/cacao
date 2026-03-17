@@ -1,0 +1,33 @@
+# Entornos Virtuales
+cacao_env/
+venv/
+.env
+
+# Archivos de caché y configuración de Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Directorios de datos crudos y procesados
+dataset_cacao/
+
+# Resultados de entrenamiento (pesos pesados y métricas)
+runs/
+*.cache
+
+# Pesos pre-entrenados y modelos guardados
+*.pt
+*.pth
+*.onnx
+
+# Archivos de IDE y sistema operativo
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
