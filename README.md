@@ -2,24 +2,25 @@
 
 ## 📌 Project Overview
 
-This Capstone project implements a highly optimized **Computer Vision classifier** based on the state-of-the-art **YOLOv11** architecture. The model is specifically fine-tuned to detect and classify the presence of *Moniliophthora roreri* (Frosty Pod Rot or Moniliasis) in cocoa pods.
+This Capstone project implements a **Computer Vision binary classifier** powered by the **YOLOv11** architecture, designed to distinguish healthy cocoa pods from those infected by *Moniliophthora roreri* (Frosty Pod Rot / Moniliasis).
 
-The project achieves high-performance classification by leveraging Data Augmentation and Early Stopping mechanisms, resulting in a **100% top-1 accuracy** on the validation set.
+The system includes a complete end-to-end pipeline: automated dataset preparation, GPU-accelerated model training with Data Augmentation and Early Stopping, and an interactive **Streamlit web dashboard** for real-time inference and metric visualization.
 
-*🇪🇸 For the Spanish version of this document, please refer to [README_es.md](README_es.md).*
+*🇪🇸 Para la versión en español, consulta [README_es.md](README_es.md).*
 
 ---
 
 ## 🚀 Features
 
-- **Raw Data Processing Automation:** The `preparar_datos.py` script automatically shuffles and splits raw images into an 80/20 train/validation ratio, building the directory structure required by Ultralytics on-the-fly.
-- **Advanced Fine-Tuning:** The `entrenar.py` script executes an intensive training pipeline using `yolo11s-cls.pt` (Small Classifier), optimized with `AdamW` and aggressive on-the-fly Image Augmentations.
-- **Overfitting Prevention:** Includes an `EarlyStopping` criteria (`patience=15`) to ensure the model generalizes effectively.
-- **Hardware Acceleration / Fallback:** Strictly requests CUDA bindings if an NVIDIA GPU is present. Features built-in automatic CPU fallback for standard environments.
+- **Automated Dataset Pipeline:** Drop your photos into `raw/` and `preparar_datos.py` handles shuffling and 80/20 train/val splitting automatically.
+- **Optimized Training:** Fine-tuning with `YOLOv11s-cls`, `AdamW` optimizer, and on-the-fly Data Augmentation (HSV shifts, rotation, horizontal flip).
+- **Overfitting Prevention:** Built-in `EarlyStopping` (patience=15) ensures the model generalizes to unseen images.
+- **Hardware Flexibility:** Automatically uses NVIDIA CUDA GPU if available, with seamless CPU fallback.
+- **Interactive Dashboard:** A Streamlit-based web interface to upload images, get instant predictions, and visualize training metrics.
 
 ---
 
-## ⚙️ Environment Setup & Installation
+## ⚙️ Installation
 
 ### 1. Clone the repository
 
@@ -28,50 +29,60 @@ git clone https://github.com/KaliGASJ/cacao.git
 cd cacao
 ```
 
-### 2. Prepare the Virtual Environment (Recommended)
+### 2. Create a virtual environment
 
 ```bash
 python3 -m venv cacao_env
-source cacao_env/bin/activate  # On Windows use: cacao_env\Scripts\activate
+source cacao_env/bin/activate  # On Windows: cacao_env\Scripts\activate
 ```
 
-### 3. Install Dependencies
+### 3. Install dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-> **Note on CUDA (GPU Acceleration):** `requirements.txt` installs standard PyTorch. If you intend to run this on a compatible NVIDIA GPU (Compute Capability 12.0+), follow the instructions inside the `requirements.txt` file to fetch the correct PyTorch Nightly build.
+> **GPU Acceleration:** The command above installs CPU-only PyTorch. If you have an NVIDIA GPU, check the instructions inside `requirements.txt` for the CUDA-enabled PyTorch installation command.
 
 ---
 
-## 🏃‍♂️ Execution Pipeline
+## 🏃‍♂️ Usage
 
-To run the full end-to-end pipeline, follow these exact steps from your terminal:
-
-### Step 1: Data Preparation
+### Step 1: Prepare the dataset
 
 ```bash
 python3 preparar_datos.py
 ```
 
-> **Expected Output:** "Estructura lista en 'dataset_cacao' para entrenar con YOLO."
+> Creates the `dataset_cacao/` directory with `train/` and `val/` splits.
 
-### Step 2: Model Training & Evaluation
+### Step 2: Train the model
 
 ```bash
 python3 entrenar.py
 ```
 
-> **Expected Output:** After epochs are completed, results (including loss graphs and confusion matrix) will be automatically generated and exported to `runs/classify/resultados_cacao/modelo_refinado/`.
+> Trains the classifier and saves the best weights, confusion matrices, and loss curves to `runs/classify/resultados_cacao/modelo_refinado/`.
+
+### Step 3: Launch the Dashboard
+
+```bash
+streamlit run app.py
+```
+
+> Opens an interactive web application at `http://localhost:8501` where you can upload cocoa pod images for instant classification and view training metrics.
 
 ---
 
 ## 📂 Repository Structure
 
-- `/raw`: Contains the raw dataset (40 original baseline images categorized in `sano/` and `moniliasis/`).
-- `preparar_datos.py`: Helper script to format the dataset.
-- `entrenar.py`: Core logic for YOLOv11 fine-tuning.
-- `.gitignore`: Secures heavy `.pt` files, caches, and user-generated metrics from being tracked.
+| File / Folder | Description |
+| --- | --- |
+| `raw/` | Original photographs organized by class (`sano/`, `moniliasis/`). |
+| `preparar_datos.py` | Splits raw images into train/val sets for YOLO. |
+| `entrenar.py` | Configures and launches the YOLOv11 fine-tuning pipeline. |
+| `app.py` | Streamlit dashboard for inference and metric visualization. |
+| `requirements.txt` | Project dependencies (Ultralytics, Streamlit, Pillow). |
+| `.gitignore` | Excludes heavy model weights, caches, and generated data. |
 
-*Developed as a Capstone Project - March 2026.*
+*Developed as a Capstone Project — March 2026.*

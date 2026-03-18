@@ -1,14 +1,16 @@
-# Librería principal (instalará sus dependencias base)
-# Main library (will install base dependencies)
+# ─── Dependencias Principales / Main Dependencies ───────────────────
 ultralytics==8.4.23
+streamlit>=1.30.0
+Pillow>=10.0.0
 
-# NOTA IMPORTANTE PARA GITHUB / IMPORTANT GITHUB NOTE:
-# [ES] Ultralytics instalará la versión regular de PyTorch por defecto (suficiente para usar CPU).
-# Si el usuario que clona el repositorio tiene una GPU NVIDIA reciente y quiere aceleración CUDA,
-# deberá desinstalar la versión por defecto y ejecutar el siguiente comando según su entorno:
-
-# [EN] Ultralytics will install the regular PyTorch version by default (enough for CPU usage).
-# If the user cloning the repo has a recent NVIDIA GPU and wants CUDA acceleration,
-# they must uninstall the default version and run the following command according to their environment:
-
+# ─── Nota sobre Aceleración GPU / GPU Acceleration Note ──────────────
+#
+# [ES] Las dependencias anteriores instalan PyTorch en modo CPU por defecto.
+#      Si tienes una GPU NVIDIA compatible con CUDA, desinstala la versión
+#      estándar de PyTorch y ejecuta el siguiente comando:
+#
+# [EN] The dependencies above install CPU-only PyTorch by default.
+#      If you have a CUDA-compatible NVIDIA GPU, uninstall the default
+#      PyTorch version and run the following command:
+#
 # pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu130

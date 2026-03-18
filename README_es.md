@@ -2,74 +2,87 @@
 
 ## 📌 Resumen del Proyecto
 
-Este proyecto fue desarrollado como entrega final (Capstone) para la resolución de un problema agrícola real usando Inteligencia Artificial. Implementa un clasificador binario de **Visión por Computadora** utilizando la potente arquitectura **YOLOv11**. Su objetivo es distinguir con precisión mazorcas de cacao sanas de aquellas infectadas por *Moniliophthora roreri* (Moniliasis).
+Este proyecto fue desarrollado como entrega final (Capstone) para la resolución de un problema agrícola real usando Inteligencia Artificial. Implementa un clasificador binario de **Visión por Computadora** con la arquitectura **YOLOv11**, capaz de distinguir mazorcas de cacao sanas de aquellas infectadas por *Moniliophthora roreri* (Moniliasis).
 
-El modelo incorpora estrategias profesionales de *Machine Learning* como **Data Augmentation** dinámico en memoria y algoritmos de **Early Stopping** con el optimizador AdamW, logrando métricas perfectas sin sufrir de sobreajuste.
+El sistema incluye un pipeline completo: preparación automática del dataset, entrenamiento acelerado por GPU con **Data Augmentation** y **Early Stopping**, y un **Dashboard web interactivo** construido con Streamlit para realizar inferencia en tiempo real y visualizar las métricas del modelo.
 
-*🇬🇧 Para la versión en inglés (Reviewer Edition), por favor consulta [README.md](README.md).*
+*🇬🇧 For the English version (Reviewer Edition), please refer to [README.md](README.md).*
 
 ---
 
 ## 🚀 Características Principales
 
-- **Automatización del Dataset:** Tiras tus fotos en la carpeta `raw/` y el script `preparar_datos.py` hace toda la magia (mezclando aleatoriamente y armando los porcentajes de entrenamiento y validación).
-- **Entrenamiento Optimizado:** Se usó la arquitectura "Small" (`yolo11s-cls.pt`) para mayor robustez, forzando alteraciones de brillo, saturación y rotación a las fotos durante el aprendizaje para multiplicar los casos de prueba.
-- **Compatible con tu compu:** El script `entrenar.py` aprovechará tu tarjeta gráfica dedicada (NVIDIA CUDA) si tienes una, pero si no, funcionará con el procesador (CPU) de tu laptop sin estrellarse.
+- **Automatización del Dataset:** Coloca tus fotos en `raw/` y el script `preparar_datos.py` las mezcla y divide automáticamente en 80% entrenamiento / 20% validación.
+- **Entrenamiento Optimizado:** Fine-tuning con `YOLOv11s-cls`, optimizador `AdamW`, y Data Augmentation en tiempo real (cambios de brillo, saturación, rotación y volteo horizontal).
+- **Prevención de Sobreajuste:** Incluye `EarlyStopping` (paciencia de 15 épocas) para garantizar que el modelo generalice con imágenes nuevas.
+- **Compatible con tu compu:** Aprovecha automáticamente tu tarjeta gráfica NVIDIA (CUDA) si tienes una, pero funciona sin problema en CPU.
+- **Dashboard Interactivo:** Interfaz web moderna con Streamlit para subir imágenes, obtener predicciones instantáneas y visualizar las métricas de entrenamiento.
 
 ---
 
-## ⚙️ Pasos para Instalarlo
+## ⚙️ Instalación
 
-### 1. Clona este repo
+### 1. Clona este repositorio
 
 ```bash
 git clone https://github.com/KaliGASJ/cacao.git
 cd cacao
 ```
 
-### 2. Crea tu entorno virtual (¡Súper importante!)
+### 2. Crea tu entorno virtual
 
 ```bash
 python3 -m venv cacao_env
-source cacao_env/bin/activate  # En Windows usa: cacao_env\Scripts\activate
+source cacao_env/bin/activate  # En Windows: cacao_env\Scripts\activate
 ```
 
-### 3. Instala Ultralytics
+### 3. Instala las dependencias
 
 ```bash
 pip install -r requirements.txt
 ```
 
-> **Tip para Gamers/Usuarios con Tarjeta de Video:** El comando anterior instala el modelo para procesador. Si abres el archivo `requirements.txt`, ahí dejé el comando exacto que debes correr si quieres que PyTorch te reconozca la GPU para entrenar en un par de minutos.
+> **Tip para usuarios con GPU:** El comando anterior instala PyTorch en modo CPU. Si tienes una tarjeta NVIDIA, revisa las instrucciones dentro de `requirements.txt` para instalar la versión con aceleración CUDA.
 
 ---
 
-## 🏃‍♂️ Cómo usarlo
+## 🏃‍♂️ Cómo Usarlo
 
-El pipeline es extremadamente sencillo. Todo se hace desde la terminal con tu entorno activado:
-
-### Paso 1: Repartir las fotos
+### Paso 1: Preparar las fotos
 
 ```bash
 python3 preparar_datos.py
 ```
 
-> *(Se creará una carpeta oculta a Github llamada `dataset_cacao`)*
+> Crea la carpeta `dataset_cacao/` con las subcarpetas `train/` y `val/` listas para YOLO.
 
-### Paso 2: Poner a estudiar a la IA
+### Paso 2: Entrenar la IA
 
 ```bash
 python3 entrenar.py
 ```
 
-> *(Pasa por un café. Cuando terminen las épocas de entrenamiento, busca la carpeta nueva `runs/`. Adentro están las gráficas y la matriz de confusión resultantes del modelo).*
+> Entrena el clasificador y guarda los mejores pesos, matrices de confusión y curvas de pérdida en `runs/classify/resultados_cacao/modelo_refinado/`.
+
+### Paso 3: Abrir el Dashboard
+
+```bash
+streamlit run app.py
+```
+
+> Abre una aplicación web interactiva en `http://localhost:8501` donde puedes arrastrar imágenes de mazorcas y obtener la clasificación instantánea, además de revisar las métricas del modelo.
 
 ---
 
-## 📂 ¿Qué hay aquí adentro?
+## 📂 Estructura del Repositorio
 
-- `/raw`: Las 40 fotografías originales tomadas como base del proyecto (sanas y enfermas).
-- `preparar_datos.py`: El script que organiza las carpetas para YOLO.
-- `entrenar.py`: El cerebro del proyecto que configura las épocas, el balance, y dispara el fine-tuning.
+| Archivo / Carpeta | Descripción |
+| --- | --- |
+| `raw/` | Fotografías originales organizadas por clase (`sano/`, `moniliasis/`). |
+| `preparar_datos.py` | Divide las imágenes en conjuntos de entrenamiento y validación. |
+| `entrenar.py` | Configura y ejecuta el fine-tuning de YOLOv11. |
+| `app.py` | Dashboard de Streamlit para inferencia y visualización de métricas. |
+| `requirements.txt` | Dependencias del proyecto (Ultralytics, Streamlit, Pillow). |
+| `.gitignore` | Excluye pesos pesados, cachés y datos generados del repositorio. |
 
-*Desarrollado para la presentación Capstone - Marzo 2026.*
+*Desarrollado para la presentación Capstone — Marzo 2026.*

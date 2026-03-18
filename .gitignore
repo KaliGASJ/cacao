@@ -1,32 +1,31 @@
-# Entornos Virtuales
+# ─── Entornos Virtuales ──────────────────────────────────────────────
 cacao_env/
 venv/
 .env
+.venv/
 
-# Archivos de caché y configuración de Python
+# ─── Caché de Python ─────────────────────────────────────────────────
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
 .Python
-env/
-.venv/
 pip-log.txt
 pip-delete-this-directory.txt
 
-# Directorios de datos crudos y procesados
+# ─── Dataset procesado (generado por preparar_datos.py) ──────────────
 dataset_cacao/
 
-# Resultados de entrenamiento (pesos pesados y métricas)
+# ─── Resultados de entrenamiento (generados por entrenar.py) ─────────
 runs/
 *.cache
 
-# Pesos pre-entrenados y modelos guardados
+# ─── Pesos de modelos (descargados/generados automáticamente) ────────
 *.pt
 *.pth
 *.onnx
 
-# Archivos de IDE y sistema operativo
+# ─── IDE y Sistema Operativo ─────────────────────────────────────────
 .vscode/
 .idea/
 .DS_Store
