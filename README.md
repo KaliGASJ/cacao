@@ -32,17 +32,29 @@ cd cacao
 ### 2. Create a virtual environment
 
 ```bash
-python3 -m venv cacao_env
-source cacao_env/bin/activate  # On Windows: cacao_env\Scripts\activate
+python3 -m venv cacao_env #On Windows the command is python -m venv cacao_env
+source cacao_env/bin/activate #On Windows the command is cacao_env\Scripts\activate
 ```
 
-### 3. Install dependencies
+### 3. Install core dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-> **GPU Acceleration:** The command above installs CPU-only PyTorch. If you have an NVIDIA GPU, check the instructions inside `requirements.txt` for the CUDA-enabled PyTorch installation command.
+### 4. (Optional) CUDA Support for NVIDIA GPUs (e.g., RTX 5050)
+
+If you have a compatible NVIDIA GPU, install PyTorch with GPU acceleration (Nightly for CUDA 13.0):
+
+```bash
+pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu130
+```
+
+To verify that your GPU was detected correctly, run:
+
+```bash
+python -c "import torch; print('CUDA available:', torch.cuda.is_available()); print('GPU:', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'None')"
+```
 
 ---
 
@@ -50,16 +62,18 @@ pip install -r requirements.txt
 
 ### Step 1: Prepare the dataset
 
+This script shuffles the images from `raw/` and automatically distributes the dataset (80% Training and 20% Validation).
+
 ```bash
-python3 preparar_datos.py
+python3 preparar_datos.py #On Windows the command is python preparar_datos.py
 ```
 
-> Creates the `dataset_cacao/` directory with `train/` and `val/` splits.
+> Creates the `dataset_cacao/` directory with `train/` and `val/` splits ready for YOLO.
 
 ### Step 2: Train the model
 
 ```bash
-python3 entrenar.py
+python3 entrenar.py #On Windows the command is python entrenar.py
 ```
 
 > Trains the classifier and saves the best weights, confusion matrices, and loss curves to `runs/classify/resultados_cacao/modelo_refinado/`.

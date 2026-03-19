@@ -32,8 +32,8 @@ cd cacao
 ### 2. Crea tu entorno virtual
 
 ```bash
-python3 -m venv cacao_env
-source cacao_env/bin/activate  # En Windows: cacao_env\Scripts\activate
+python3 -m venv cacao_env #En windows el comando es python -m venv cacao_env
+source cacao_env/bin/activate #En windows el comando es cacao_env\Scripts\activate
 ```
 
 ### 3. Instala las dependencias
@@ -51,7 +51,7 @@ pip install -r requirements.txt
 ### Paso 1: Preparar las fotos
 
 ```bash
-python3 preparar_datos.py
+python3 preparar_datos.py #En windows el comando es python preparar_datos.py
 ```
 
 > Crea la carpeta `dataset_cacao/` con las subcarpetas `train/` y `val/` listas para YOLO.
@@ -59,7 +59,7 @@ python3 preparar_datos.py
 ### Paso 2: Entrenar la IA
 
 ```bash
-python3 entrenar.py
+python3 entrenar.py #En windows el comando es python entrenar.py
 ```
 
 > Entrena el clasificador y guarda los mejores pesos, matrices de confusión y curvas de pérdida en `runs/classify/resultados_cacao/modelo_refinado/`.
