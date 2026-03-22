@@ -38,10 +38,12 @@ def entrenar_modelo():
         imgsz=224,                    # Resolución de entrada (px)
         batch=16,                     # Tamaño de lote por iteración
         device=device,                # GPU o CPU según disponibilidad
+        #optimizacion de resultados
         project="resultados_cacao",   # Carpeta padre para guardar resultados
         name="modelo_refinado",       # Nombre del experimento
         plots=True,                   # Generar gráficas de métricas automáticamente
         save=True,                    # Guardar pesos best.pt y last.pt
+        #prevencion y optimizacion
         patience=15,                  # Épocas sin mejora antes de detener (Early Stopping)
         optimizer="AdamW",            # Optimizador con decaimiento de pesos
         lr0=0.001,                    # Tasa de aprendizaje inicial

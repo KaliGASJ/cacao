@@ -2,7 +2,7 @@
 
 ## 📌 Project Overview
 
-This Capstone project implements a **Computer Vision binary classifier** powered by the **YOLOv11** architecture, designed to distinguish healthy cocoa pods from those infected by *Moniliophthora roreri* (Frosty Pod Rot / Moniliasis).
+This Capstone project implements a **Computer Vision binary classifier** powered by the **YOLOv11** architecture, designed to distinguish healthy cocoa pods from those infected by *Moniliophthora roreri* (Frosty Pod Rot / Moniliasis). The model currently achieves **98% top-1 accuracy** on the validation set.
 
 The system includes a complete end-to-end pipeline: automated dataset preparation, GPU-accelerated model training with Data Augmentation and Early Stopping, and an interactive **Streamlit web dashboard** for real-time inference and metric visualization.
 
@@ -96,7 +96,7 @@ streamlit run app.py
 | `preparar_datos.py` | Splits raw images into train/val sets for YOLO. |
 | `entrenar.py` | Configures and launches the YOLOv11 fine-tuning pipeline. |
 | `app.py` | Streamlit dashboard for inference and metric visualization. |
-| `requirements.txt` | Project dependencies (Ultralytics, Streamlit, Pillow). |
+| `requirements.txt` | Project dependencies (Ultralytics, Streamlit, Pillow, OpenCV). |
 | `.gitignore` | Excludes heavy model weights, caches, and generated data. |
 
 *Developed as a Capstone Project — March 2026.*

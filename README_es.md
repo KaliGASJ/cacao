@@ -2,7 +2,7 @@
 
 ## 📌 Resumen del Proyecto
 
-Este proyecto fue desarrollado como entrega final (Capstone) para la resolución de un problema agrícola real usando Inteligencia Artificial. Implementa un clasificador binario de **Visión por Computadora** con la arquitectura **YOLOv11**, capaz de distinguir mazorcas de cacao sanas de aquellas infectadas por *Moniliophthora roreri* (Moniliasis).
+Este proyecto fue desarrollado como entrega final (Capstone) para la resolución de un problema agrícola real usando Inteligencia Artificial. Implementa un clasificador binario de **Visión por Computadora** con la arquitectura **YOLOv11**, capaz de distinguir mazorcas de cacao sanas de aquellas infectadas por *Moniliophthora roreri* (Moniliasis). Actualmente alcanza un **98% de precisión** en el conjunto de validación.
 
 El sistema incluye un pipeline completo: preparación automática del dataset, entrenamiento acelerado por GPU con **Data Augmentation** y **Early Stopping**, y un **Dashboard web interactivo** construido con Streamlit para realizar inferencia en tiempo real y visualizar las métricas del modelo.
 
@@ -82,7 +82,7 @@ streamlit run app.py
 | `preparar_datos.py` | Divide las imágenes en conjuntos de entrenamiento y validación. |
 | `entrenar.py` | Configura y ejecuta el fine-tuning de YOLOv11. |
 | `app.py` | Dashboard de Streamlit para inferencia y visualización de métricas. |
-| `requirements.txt` | Dependencias del proyecto (Ultralytics, Streamlit, Pillow). |
+| `requirements.txt` | Dependencias del proyecto (Ultralytics, Streamlit, Pillow, OpenCV). |
 | `.gitignore` | Excluye pesos pesados, cachés y datos generados del repositorio. |
 
 *Desarrollado para la presentación Capstone — Marzo 2026.*

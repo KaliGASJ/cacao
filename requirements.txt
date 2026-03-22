@@ -2,6 +2,7 @@
 ultralytics==8.4.23
 streamlit>=1.30.0
 Pillow>=10.0.0
+opencv-python>=4.8.0
 
 # ─── Nota sobre Aceleración GPU / GPU Acceleration Note ──────────────
 #
