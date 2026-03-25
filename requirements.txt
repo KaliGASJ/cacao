@@ -1,17 +1,16 @@
-# ─── Dependencias Principales / Main Dependencies ───────────────────
+# ─── Core dependencies ────────────────────────────────────────────────────────
 ultralytics==8.4.23
-streamlit>=1.30.0
+streamlit>=1.43.0
 Pillow>=10.0.0
 opencv-python>=4.8.0
 
-# ─── Nota sobre Aceleración GPU / GPU Acceleration Note ──────────────
+# ─── GPU acceleration (optional) ─────────────────────────────────────────────
 #
-# [ES] Las dependencias anteriores instalan PyTorch en modo CPU por defecto.
-#      Si tienes una GPU NVIDIA compatible con CUDA, desinstala la versión
-#      estándar de PyTorch y ejecuta el siguiente comando:
+# The packages above install CPU-only PyTorch by default.
+# If you have a CUDA-compatible NVIDIA GPU, run the following AFTER the above:
 #
-# [EN] The dependencies above install CPU-only PyTorch by default.
-#      If you have a CUDA-compatible NVIDIA GPU, uninstall the default
-#      PyTorch version and run the following command:
+#   pip install --pre torch torchvision torchaudio \
+#       --index-url https://download.pytorch.org/whl/nightly/cu130
 #
-# pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu130
+# Tested on: RTX 5050 Laptop · CUDA 13.0 · torch 2.12.0.dev+cu130
+# For CUDA 11.8 / 12.1 replace cu130 with cu118 / cu121 accordingly.

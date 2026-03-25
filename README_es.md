@@ -1,88 +1,104 @@
-# 🍫 Clasificador de Calidad y Enfermedades del Cacao (Moniliasis)
+# CacaoVision — Clasificador de Enfermedades del Cacao (Moniliasis)
 
-## 📌 Resumen del Proyecto
+Clasificador binario de **Visión por Computadora** con arquitectura **YOLOv11m-cls** que distingue mazorcas de cacao sanas de aquellas infectadas por *Moniliophthora roreri* (Moniliasis).
 
-Este proyecto fue desarrollado como entrega final (Capstone) para la resolución de un problema agrícola real usando Inteligencia Artificial. Implementa un clasificador binario de **Visión por Computadora** con la arquitectura **YOLOv11**, capaz de distinguir mazorcas de cacao sanas de aquellas infectadas por *Moniliophthora roreri* (Moniliasis). Actualmente alcanza un **98% de precisión** en el conjunto de validación.
-
-El sistema incluye un pipeline completo: preparación automática del dataset, entrenamiento acelerado por GPU con **Data Augmentation** y **Early Stopping**, y un **Dashboard web interactivo** construido con Streamlit para realizar inferencia en tiempo real y visualizar las métricas del modelo.
-
-*🇬🇧 For the English version (Reviewer Edition), please refer to [README.md](README.md).*
+*🇬🇧 For the English version, see [README.md](README.md).*
 
 ---
 
-## 🚀 Características Principales
+## Características
 
-- **Automatización del Dataset:** Coloca tus fotos en `raw/` y el script `preparar_datos.py` las mezcla y divide automáticamente en 80% entrenamiento / 20% validación.
-- **Entrenamiento Optimizado:** Fine-tuning con `YOLOv11s-cls`, optimizador `AdamW`, y Data Augmentation en tiempo real (cambios de brillo, saturación, rotación y volteo horizontal).
-- **Prevención de Sobreajuste:** Incluye `EarlyStopping` (paciencia de 15 épocas) para garantizar que el modelo generalice con imágenes nuevas.
-- **Compatible con tu compu:** Aprovecha automáticamente tu tarjeta gráfica NVIDIA (CUDA) si tienes una, pero funciona sin problema en CPU.
-- **Dashboard Interactivo:** Interfaz web moderna con Streamlit para subir imágenes, obtener predicciones instantáneas y visualizar las métricas de entrenamiento.
+- **Pipeline de dataset automatizado** — coloca fotos en `raw/sano/` y `raw/moniliasis/`; el script aplica split estratificado 80/20, oversampling de clase minoritaria y generación de crops offline.
+- **Entrenamiento robusto** — fine-tuning de YOLOv11m-cls con AdamW, cosine LR, label smoothing, mixup y augmentación agresiva (rotación ±45°, HSV, erasing).
+- **Umbrales asimétricos** — `UMBRAL_SANO = 92%` / `UMBRAL_MONILIASIS = 10%` para minimizar falsos negativos en mazorcas enfermas.
+- **Compatible con tu hardware** — detecta GPU NVIDIA (CUDA) automáticamente; funciona en CPU sin cambios.
+- **Dashboard moderno** — interfaz Streamlit con predicciones en tiempo real, barras duales de confianza y gráficas de entrenamiento.
 
 ---
 
-## ⚙️ Instalación
+## Instalación
 
-### 1. Clona este repositorio
+### 1. Clona el repositorio
 
-```bash
+```batch
 git clone https://github.com/KaliGASJ/cacao.git
 cd cacao
 ```
 
-### 2. Crea tu entorno virtual
+### 2. Crea el entorno virtual
 
-```bash
-python3 -m venv cacao_env #En windows el comando es python -m venv cacao_env
-source cacao_env/bin/activate #En windows el comando es cacao_env\Scripts\activate
+```batch
+python -m venv cacao_env                # Linux / Mac: python3 -m venv cacao_env
+cacao_env\Scripts\activate              # Linux / Mac: source cacao_env/bin/activate
 ```
 
 ### 3. Instala las dependencias
 
-```bash
+```batch
 pip install -r requirements.txt
 ```
 
-> **Tip para usuarios con GPU:** El comando anterior instala PyTorch en modo CPU. Si tienes una tarjeta NVIDIA, revisa las instrucciones dentro de `requirements.txt` para instalar la versión con aceleración CUDA.
+### 4. (Opcional) Aceleración GPU — NVIDIA CUDA 13.0
+
+```batch
+pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu130
+```
+
+Verifica que la GPU fue detectada:
+
+```batch
+python -c "import torch; print('CUDA:', torch.cuda.is_available()); print('GPU:', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'None')"
+```
 
 ---
 
-## 🏃‍♂️ Cómo Usarlo
+## Uso
 
-### Paso 1: Preparar las fotos
+Ejecuta los tres pasos **en orden**. Cada uno depende de la salida del anterior.
 
-```bash
-python3 preparar_datos.py #En windows el comando es python preparar_datos.py
+### Paso 1 — Preparar el dataset
+
+Lee `raw/sano/` y `raw/moniliasis/`, aplica split estratificado, oversampling y genera crops. Genera `dataset_cacao/train/` y `dataset_cacao/val/`.
+
+```batch
+python preparar_datos.py                # Linux / Mac: python3 preparar_datos.py
 ```
 
-> Crea la carpeta `dataset_cacao/` con las subcarpetas `train/` y `val/` listas para YOLO.
+### Paso 2 — Entrenar el modelo
 
-### Paso 2: Entrenar la IA
+Fine-tuning de YOLOv11m-cls hasta 150 épocas con early stopping (patience = 30). Guarda los mejores pesos y gráficas en `runs/classify/resultados_cacao/modelo_refinado/`.
 
-```bash
-python3 entrenar.py #En windows el comando es python entrenar.py
+```batch
+python entrenar.py                      # Linux / Mac: python3 entrenar.py
 ```
 
-> Entrena el clasificador y guarda los mejores pesos, matrices de confusión y curvas de pérdida en `runs/classify/resultados_cacao/modelo_refinado/`.
+> [!CAUTION]
+> **Peligro por estrés del hardware:** Ejecutar `entrenar.py` en **CPU tomará varias horas** bajo un nivel de procesamiento al 100% y constante. Esto genera un alto riesgo de sobrecalentamiento que a la larga puede dañar tu equipo. Por seguridad, usar una **GPU con CUDA es estrictamente recomendado** (toma **menos de 20 minutos**, ej. en RTX 5050 con `imgsz=512, batch=20`).
 
-### Paso 3: Abrir el Dashboard
+### Paso 3 — Abrir el dashboard
 
-```bash
+```batch
 streamlit run app.py
 ```
 
-> Abre una aplicación web interactiva en `http://localhost:8501` donde puedes arrastrar imágenes de mazorcas y obtener la clasificación instantánea, además de revisar las métricas del modelo.
+Se abre en `http://localhost:8501`. Sube una o varias imágenes de mazorcas para obtener diagnóstico instantáneo SANO / MONILIASIS / INCIERTO con barras de confianza.
 
 ---
 
-## 📂 Estructura del Repositorio
+## Estructura del Proyecto
 
-| Archivo / Carpeta | Descripción |
+| Ruta | Descripción |
 | --- | --- |
-| `raw/` | Fotografías originales organizadas por clase (`sano/`, `moniliasis/`). |
-| `preparar_datos.py` | Divide las imágenes en conjuntos de entrenamiento y validación. |
-| `entrenar.py` | Configura y ejecuta el fine-tuning de YOLOv11. |
-| `app.py` | Dashboard de Streamlit para inferencia y visualización de métricas. |
-| `requirements.txt` | Dependencias del proyecto (Ultralytics, Streamlit, Pillow, OpenCV). |
-| `.gitignore` | Excluye pesos pesados, cachés y datos generados del repositorio. |
+| `raw/sano/` | Fotos originales de mazorcas sanas. |
+| `raw/moniliasis/` | Fotos originales de mazorcas enfermas. |
+| `preparar_datos.py` | Split, oversampling y generación de crops. |
+| `entrenar.py` | Pipeline de fine-tuning YOLOv11m-cls. |
+| `app.py` | Dashboard de inferencia con Streamlit. |
+| `requirements.txt` | Dependencias de Python. |
+| `dataset_cacao/` | *(auto-generado)* Splits train/val para YOLO. |
+| `runs/` | *(auto-generado)* Pesos del modelo y gráficas de entrenamiento. |
+| `cacao_env/` | *(auto-generado)* Entorno virtual — excluido del repositorio. |
 
-*Desarrollado para la presentación Capstone — Marzo 2026.*
+---
+
+Proyecto Capstone — Comalcalco, Tabasco · Marzo 2026

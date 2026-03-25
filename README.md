@@ -1,102 +1,104 @@
-# 🍫 Cocoa Quality & Disease Classifier (Moniliasis)
+# CacaoVision — Cocoa Disease Classifier (Moniliasis)
 
-## 📌 Project Overview
-
-This Capstone project implements a **Computer Vision binary classifier** powered by the **YOLOv11** architecture, designed to distinguish healthy cocoa pods from those infected by *Moniliophthora roreri* (Frosty Pod Rot / Moniliasis). The model currently achieves **98% top-1 accuracy** on the validation set.
-
-The system includes a complete end-to-end pipeline: automated dataset preparation, GPU-accelerated model training with Data Augmentation and Early Stopping, and an interactive **Streamlit web dashboard** for real-time inference and metric visualization.
+Computer Vision binary classifier powered by **YOLOv11m-cls** that distinguishes healthy cocoa pods from those infected by *Moniliophthora roreri* (Frosty Pod Rot / Moniliasis).
 
 *🇪🇸 Para la versión en español, consulta [README_es.md](README_es.md).*
 
 ---
 
-## 🚀 Features
+## Features
 
-- **Automated Dataset Pipeline:** Drop your photos into `raw/` and `preparar_datos.py` handles shuffling and 80/20 train/val splitting automatically.
-- **Optimized Training:** Fine-tuning with `YOLOv11s-cls`, `AdamW` optimizer, and on-the-fly Data Augmentation (HSV shifts, rotation, horizontal flip).
-- **Overfitting Prevention:** Built-in `EarlyStopping` (patience=15) ensures the model generalizes to unseen images.
-- **Hardware Flexibility:** Automatically uses NVIDIA CUDA GPU if available, with seamless CPU fallback.
-- **Interactive Dashboard:** A Streamlit-based web interface to upload images, get instant predictions, and visualize training metrics.
+- **Automated dataset pipeline** — drop photos into `raw/sano/` and `raw/moniliasis/`, the script handles stratified 80/20 split, oversampling, and offline crop augmentation automatically.
+- **Strong training setup** — YOLOv11m-cls fine-tuning with AdamW, cosine LR schedule, label smoothing, mixup, and aggressive augmentation (rotation ±45°, HSV, erasing).
+- **Asymmetric inference thresholds** — `UMBRAL_SANO = 92%` / `UMBRAL_MONILIASIS = 10%` to minimize false negatives on diseased pods.
+- **Hardware flexible** — auto-detects NVIDIA CUDA GPU; falls back to CPU seamlessly.
+- **Modern dashboard** — Streamlit UI with real-time predictions, dual confidence bars, and training metric plots.
 
 ---
 
-## ⚙️ Installation
+## Installation
 
 ### 1. Clone the repository
 
-```bash
+```batch
 git clone https://github.com/KaliGASJ/cacao.git
 cd cacao
 ```
 
 ### 2. Create a virtual environment
 
-```bash
-python3 -m venv cacao_env #On Windows the command is python -m venv cacao_env
-source cacao_env/bin/activate #On Windows the command is cacao_env\Scripts\activate
+```batch
+python -m venv cacao_env                # Linux / Mac: python3 -m venv cacao_env
+cacao_env\Scripts\activate              # Linux / Mac: source cacao_env/bin/activate
 ```
 
-### 3. Install core dependencies
+### 3. Install dependencies
 
-```bash
+```batch
 pip install -r requirements.txt
 ```
 
-### 4. (Optional) CUDA Support for NVIDIA GPUs (e.g., RTX 5050)
+### 4. (Optional) GPU acceleration — NVIDIA CUDA 13.0
 
-If you have a compatible NVIDIA GPU, install PyTorch with GPU acceleration (Nightly for CUDA 13.0):
-
-```bash
+```batch
 pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu130
 ```
 
-To verify that your GPU was detected correctly, run:
+Verify GPU detection:
 
-```bash
-python -c "import torch; print('CUDA available:', torch.cuda.is_available()); print('GPU:', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'None')"
+```batch
+python -c "import torch; print('CUDA:', torch.cuda.is_available()); print('GPU:', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'None')"
 ```
 
 ---
 
-## 🏃‍♂️ Usage
+## Usage
 
-### Step 1: Prepare the dataset
+Run the three steps **in order**. Each step depends on the output of the previous one.
 
-This script shuffles the images from `raw/` and automatically distributes the dataset (80% Training and 20% Validation).
+### Step 1 — Prepare the dataset
 
-```bash
-python3 preparar_datos.py #On Windows the command is python preparar_datos.py
+Reads `raw/sano/` and `raw/moniliasis/`, applies stratified split, oversampling, and generates crops. Outputs `dataset_cacao/train/` and `dataset_cacao/val/`.
+
+```batch
+python preparar_datos.py                # Linux / Mac: python3 preparar_datos.py
 ```
 
-> Creates the `dataset_cacao/` directory with `train/` and `val/` splits ready for YOLO.
+### Step 2 — Train the model
 
-### Step 2: Train the model
+Fine-tunes YOLOv11m-cls for up to 150 epochs with early stopping (patience = 30). Saves best weights and metric plots to `runs/classify/resultados_cacao/modelo_refinado/`.
 
-```bash
-python3 entrenar.py #On Windows the command is python entrenar.py
+```batch
+python entrenar.py                      # Linux / Mac: python3 entrenar.py
 ```
 
-> Trains the classifier and saves the best weights, confusion matrices, and loss curves to `runs/classify/resultados_cacao/modelo_refinado/`.
+> [!CAUTION]
+> **Hardware Warning:** Training `entrenar.py` on a **CPU takes several hours** under intense, continuous load, leading to potential overheating or hardware damage. We strongly recommend using a **GPU with CUDA**, which finishes in **less than 20 minutes** (e.g., RTX 5050 with `imgsz=512, batch=20`).
 
-### Step 3: Launch the Dashboard
+### Step 3 — Launch the dashboard
 
-```bash
+```batch
 streamlit run app.py
 ```
 
-> Opens an interactive web application at `http://localhost:8501` where you can upload cocoa pod images for instant classification and view training metrics.
+Opens at `http://localhost:8501`. Upload one or more cocoa pod images to get an instant SANO / MONILIASIS / INCIERTO diagnosis with confidence bars.
 
 ---
 
-## 📂 Repository Structure
+## Project Structure
 
-| File / Folder | Description |
+| Path | Description |
 | --- | --- |
-| `raw/` | Original photographs organized by class (`sano/`, `moniliasis/`). |
-| `preparar_datos.py` | Splits raw images into train/val sets for YOLO. |
-| `entrenar.py` | Configures and launches the YOLOv11 fine-tuning pipeline. |
-| `app.py` | Streamlit dashboard for inference and metric visualization. |
-| `requirements.txt` | Project dependencies (Ultralytics, Streamlit, Pillow, OpenCV). |
-| `.gitignore` | Excludes heavy model weights, caches, and generated data. |
+| `raw/sano/` | Original healthy pod photos. |
+| `raw/moniliasis/` | Original diseased pod photos. |
+| `preparar_datos.py` | Dataset split, oversampling, and crop generation. |
+| `entrenar.py` | YOLOv11m-cls fine-tuning pipeline. |
+| `app.py` | Streamlit inference dashboard. |
+| `requirements.txt` | Python dependencies. |
+| `dataset_cacao/` | *(auto-generated)* Train / val splits for YOLO. |
+| `runs/` | *(auto-generated)* Model weights and training plots. |
+| `cacao_env/` | *(auto-generated)* Virtual environment — excluded from git. |
 
-*Developed as a Capstone Project — March 2026.*
+---
+
+Capstone Project — Comalcalco, Tabasco · March 2026

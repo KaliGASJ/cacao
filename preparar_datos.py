@@ -1,10 +1,9 @@
 """
 preparar_datos.py
-─────────────────
-Distribuye automáticamente las imágenes de la carpeta 'raw/' en
-subcarpetas 'train/' y 'val/' dentro de 'dataset_cacao/', respetando
-la estructura de directorios que requiere Ultralytics YOLO para
-clasificación de imágenes.
+-----------------
+Distribuye las imagenes de 'raw/' en 'dataset_cacao/{train,val}/'
+con split estratificado 80/20, oversampling de la clase minoritaria,
+y generacion de crops aleatorios para romper el sesgo de composicion.
 
 Uso:
     python3 preparar_datos.py
@@ -13,69 +12,150 @@ Uso:
 import shutil
 import random
 from pathlib import Path
+from collections import Counter
+from PIL import Image
 
 
-def preparar_datos(ruta_origen="raw", ruta_destino="dataset_cacao", proporcion_train=0.8):
+def generar_crops_offline(img_path, dir_destino, stem, sufijo, rng, n_crops=3):
     """
-    Lee cada subcarpeta de 'ruta_origen' como una clase, mezcla sus
-    imágenes aleatoriamente y las copia a 'ruta_destino' divididas
-    en conjuntos de entrenamiento (80 %) y validación (20 %).
+    Genera crops aleatorios de una imagen y los guarda en disco.
+    Esto fuerza al modelo a aprender de regiones parciales (textura)
+    en vez del contexto global (mano, fondo, composicion).
+    """
+    img = Image.open(img_path)
+    w, h = img.size
+    guardados = 0
 
-    Args:
-        ruta_origen:      Carpeta raíz con subcarpetas por clase (ej. raw/sano, raw/moniliasis).
-        ruta_destino:     Carpeta donde se generará la estructura train/val.
-        proporcion_train: Fracción de imágenes destinadas a entrenamiento (0.0 – 1.0).
+    for c in range(n_crops):
+        # Crop entre 50% y 80% del tamano original, posicion aleatoria
+        frac = rng.uniform(0.5, 0.8)
+        cw, ch = int(w * frac), int(h * frac)
+        x = rng.randint(0, w - cw)
+        y = rng.randint(0, h - ch)
+        crop = img.crop((x, y, x + cw, y + ch))
+        destino = dir_destino / f"{stem}_crop{c}{sufijo}"
+        crop.save(destino, quality=95)
+        guardados += 1
+
+    return guardados
+
+
+def preparar_datos(ruta_origen="raw", ruta_destino="dataset_cacao", val_por_clase=50):
+    """
+    val_por_clase: numero ABSOLUTO de imagenes reservadas para validacion por clase.
+    Esto garantiza un val set balanceado independientemente del tamano de cada clase.
+    El resto va a train (+ oversampling + crops).
     """
     dir_origen = Path(ruta_origen)
     dir_destino = Path(ruta_destino)
 
-    # Validar que la carpeta de origen exista
     if not dir_origen.exists():
-        print(f"Error: No se encontró la carpeta '{dir_origen}'.")
+        print(f"Error: No se encontro la carpeta '{dir_origen}'.")
         return
 
-    # Detectar clases (cada subcarpeta = una clase)
-    clases = [d.name for d in dir_origen.iterdir() if d.is_dir()]
+    clases = sorted([d.name for d in dir_origen.iterdir() if d.is_dir()])
     if not clases:
         print("Error: No se encontraron subcarpetas de clases dentro de 'raw/'.")
         return
 
-    print("Procesando imágenes...")
+    extensiones_validas = {".jpg", ".jpeg", ".png", ".webp"}
+    rng = random.Random(42)
+
+    conteo_por_clase = {}
+    imagenes_train_por_clase = {}
+    imagenes_val_por_clase = {}
+
+    # --- Fase 1: Calcular tamaño de val balanceado entre clases ---
+    imagenes_por_clase = {}
+    for clase in clases:
+        ruta_clase = dir_origen / clase
+        imagenes = sorted([
+            img for img in ruta_clase.iterdir()
+            if img.suffix.lower() in extensiones_validas
+        ])
+        rng.shuffle(imagenes)
+        imagenes_por_clase[clase] = imagenes
+        conteo_por_clase[clase] = len(imagenes)
+
+    # El val por clase = mínimo entre val_por_clase y el 20% de la clase más pequeña
+    # Esto garantiza val perfectamente balanceado (misma N en todas las clases)
+    n_val_global = min(
+        val_por_clase,
+        min(max(1, len(imgs) // 5) for imgs in imagenes_por_clase.values())
+    )
+
+    for clase, imagenes in imagenes_por_clase.items():
+        imagenes_val_por_clase[clase] = imagenes[:n_val_global]
+        imagenes_train_por_clase[clase] = imagenes[n_val_global:]
+
+    # --- Fase 2: Oversampling de clase minoritaria en train ---
+    conteos_train = {c: len(imgs) for c, imgs in imagenes_train_por_clase.items()}
+    max_train = max(conteos_train.values())
+
+    print("Distribucion original del dataset:")
+    for clase in clases:
+        total = conteo_por_clase[clase]
+        n_train = conteos_train[clase]
+        n_val = len(imagenes_val_por_clase[clase])
+        print(f"  {clase}: {total} total ({n_train} train / {n_val} val)")
+    print(f"  Val balanceado: {' + '.join(str(len(imagenes_val_por_clase[c]))+' '+c for c in clases)}")
+
+    oversampled = {}
+    for clase, imgs in imagenes_train_por_clase.items():
+        if len(imgs) < max_train:
+            deficit = max_train - len(imgs)
+            extras = [rng.choice(imgs) for _ in range(deficit)]
+            oversampled[clase] = imgs + extras
+            print(f"\nOversampling '{clase}': {len(imgs)} -> {len(oversampled[clase])} "
+                  f"(+{deficit} duplicados)")
+        else:
+            oversampled[clase] = imgs
+
+    # --- Fase 3: Copiar archivos + generar crops ---
+    if dir_destino.exists():
+        shutil.rmtree(dir_destino)
+        print(f"\nDirectorio '{dir_destino}' limpiado.")
+
+    print("\nCopiando imagenes y generando crops...")
 
     for clase in clases:
-        # Listar solo archivos de imagen válidos
-        ruta_clase_origen = dir_origen / clase
-        extensiones_validas = {".jpg", ".jpeg", ".png", ".webp"}
-        imagenes = [
-            img for img in ruta_clase_origen.iterdir()
-            if img.suffix.lower() in extensiones_validas
-        ]
+        dir_train = dir_destino / "train" / clase
+        dir_val = dir_destino / "val" / clase
+        dir_train.mkdir(parents=True, exist_ok=True)
+        dir_val.mkdir(parents=True, exist_ok=True)
 
-        # Mezclar con semilla fija para reproducibilidad
-        random.seed(42)
-        random.shuffle(imagenes)
+        total_crops = 0
 
-        # Dividir en entrenamiento y validación
-        cant_train = int(len(imagenes) * proporcion_train)
-        imagenes_train = imagenes[:cant_train]
-        imagenes_val = imagenes[cant_train:]
+        # Train (con oversampling + crops)
+        contador_duplicados = Counter()
+        for img in oversampled[clase]:
+            contador_duplicados[img.name] += 1
+            if contador_duplicados[img.name] == 1:
+                destino = dir_train / img.name
+                stem = img.stem
+            else:
+                stem = f"{img.stem}_dup{contador_duplicados[img.name] - 1}"
+                destino = dir_train / f"{stem}{img.suffix}"
+            shutil.copy2(img, destino)
 
-        # Crear directorios de destino si no existen
-        rutas_destino = {
-            "train": dir_destino / "train" / clase,
-            "val": dir_destino / "val" / clase,
-        }
-        for ruta in rutas_destino.values():
-            ruta.mkdir(parents=True, exist_ok=True)
+            # Generar 3 crops aleatorios por imagen original (no duplicados)
+            if contador_duplicados[img.name] == 1:
+                total_crops += generar_crops_offline(
+                    img, dir_train, img.stem, img.suffix, rng, n_crops=3
+                )
 
-        # Copiar imágenes preservando metadatos
-        for img in imagenes_train:
-            shutil.copy2(img, rutas_destino["train"] / img.name)
-        for img in imagenes_val:
-            shutil.copy2(img, rutas_destino["val"] / img.name)
+        # Val (sin oversampling ni crops para evaluacion limpia)
+        for img in imagenes_val_por_clase[clase]:
+            shutil.copy2(img, dir_val / img.name)
 
-        print(f" - {clase}: {len(imagenes_train)} a train, {len(imagenes_val)} a val.")
+        n_train_final = len(list(dir_train.iterdir()))
+        n_val_final = len(list(dir_val.iterdir()))
+        print(f"  {clase}: {n_train_final} train ({total_crops} crops) / {n_val_final} val")
 
+    # --- Resumen final ---
+    total_train = sum(len(list((dir_destino / "train" / c).iterdir())) for c in clases)
+    total_val = sum(len(list((dir_destino / "val" / c).iterdir())) for c in clases)
+    print(f"\nTotal: {total_train} train + {total_val} val = {total_train + total_val}")
     print("Preprocesamiento finalizado.")
 
 
