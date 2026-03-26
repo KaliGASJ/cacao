@@ -1,9 +1,13 @@
 """
 preparar_datos.py
 -----------------
-Distribuye las imagenes de 'raw/' en 'dataset_cacao/{train,val}/'
-con split estratificado 80/20, oversampling de la clase minoritaria,
-y generacion de crops aleatorios para romper el sesgo de composicion.
+Pipeline de preparacion de datos para clasificacion binaria sano/moniliasis.
+
+Fases:
+  1. Escaneo de raw/ con deduplicacion perceptual (average hash)
+  2. Split balanceado: test holdout → val → train
+  3. Oversampling de clase minoritaria en train
+  4. Crops aleatorios offline para romper sesgo de composicion
 
 Uso:
     python3 preparar_datos.py
@@ -13,149 +17,187 @@ import shutil
 import random
 from pathlib import Path
 from collections import Counter
+
+import numpy as np
 from PIL import Image
 
 
+# ─── Deduplicacion ────────────────────────────────────────────────────────────
+
+def _ahash(img_path, size=16):
+    """Average perceptual hash (256 bits)."""
+    try:
+        img = Image.open(img_path).convert("L").resize((size, size), Image.LANCZOS)
+        pixels = np.array(img, dtype=np.float32).flatten()
+        return (pixels > pixels.mean()).astype(np.uint8)
+    except Exception:
+        return None
+
+
+def deduplicar(imagenes, umbral=10):
+    """
+    Filtra imagenes casi-identicas (Hamming distance < umbral sobre 256 bits).
+    No modifica archivos en disco; solo retorna la lista filtrada.
+    """
+    hashes, paths = [], []
+    for img in imagenes:
+        h = _ahash(img)
+        if h is not None:
+            hashes.append(h)
+            paths.append(img)
+    if not hashes:
+        return imagenes, 0
+    H = np.stack(hashes)
+    keep = np.ones(len(paths), dtype=bool)
+    for i in range(len(paths)):
+        if not keep[i]:
+            continue
+        dists = np.sum(H[i + 1:] != H[i], axis=1)
+        keep[np.where(dists < umbral)[0] + (i + 1)] = False
+    unicos = [paths[i] for i in range(len(paths)) if keep[i]]
+    return unicos, len(paths) - len(unicos)
+
+
+# ─── Crops offline ────────────────────────────────────────────────────────────
+
 def generar_crops_offline(img_path, dir_destino, stem, sufijo, rng, n_crops=3):
-    """
-    Genera crops aleatorios de una imagen y los guarda en disco.
-    Esto fuerza al modelo a aprender de regiones parciales (textura)
-    en vez del contexto global (mano, fondo, composicion).
-    """
+    """Genera crops aleatorios (50-80% del original) para forzar aprendizaje de texturas."""
     img = Image.open(img_path)
     w, h = img.size
     guardados = 0
-
     for c in range(n_crops):
-        # Crop entre 50% y 80% del tamano original, posicion aleatoria
         frac = rng.uniform(0.5, 0.8)
         cw, ch = int(w * frac), int(h * frac)
         x = rng.randint(0, w - cw)
         y = rng.randint(0, h - ch)
         crop = img.crop((x, y, x + cw, y + ch))
-        destino = dir_destino / f"{stem}_crop{c}{sufijo}"
-        crop.save(destino, quality=95)
+        (dir_destino / f"{stem}_crop{c}{sufijo}").parent.mkdir(parents=True, exist_ok=True)
+        crop.save(dir_destino / f"{stem}_crop{c}{sufijo}", quality=95)
         guardados += 1
-
     return guardados
 
 
-def preparar_datos(ruta_origen="raw", ruta_destino="dataset_cacao", val_por_clase=50):
-    """
-    val_por_clase: numero ABSOLUTO de imagenes reservadas para validacion por clase.
-    Esto garantiza un val set balanceado independientemente del tamano de cada clase.
-    El resto va a train (+ oversampling + crops).
-    """
+# ─── Pipeline principal ───────────────────────────────────────────────────────
+
+def preparar_datos(
+    ruta_origen="raw",
+    ruta_destino="dataset_cacao",
+    val_por_clase=50,
+    test_por_clase=15,
+    dedup_umbral=10,
+    max_ratio=2.5,
+):
     dir_origen = Path(ruta_origen)
     dir_destino = Path(ruta_destino)
 
     if not dir_origen.exists():
-        print(f"Error: No se encontro la carpeta '{dir_origen}'.")
+        print(f"Error: No se encontro '{dir_origen}'.")
         return
 
     clases = sorted([d.name for d in dir_origen.iterdir() if d.is_dir()])
     if not clases:
-        print("Error: No se encontraron subcarpetas de clases dentro de 'raw/'.")
+        print("Error: No se encontraron subcarpetas en 'raw/'.")
         return
 
     extensiones_validas = {".jpg", ".jpeg", ".png", ".webp"}
     rng = random.Random(42)
 
-    conteo_por_clase = {}
-    imagenes_train_por_clase = {}
-    imagenes_val_por_clase = {}
-
-    # --- Fase 1: Calcular tamaño de val balanceado entre clases ---
+    # ── Fase 1: Escanear + deduplicar ────────────────────────────────────────
     imagenes_por_clase = {}
+    print("Escaneando y deduplicando...")
     for clase in clases:
-        ruta_clase = dir_origen / clase
-        imagenes = sorted([
-            img for img in ruta_clase.iterdir()
-            if img.suffix.lower() in extensiones_validas
-        ])
-        rng.shuffle(imagenes)
-        imagenes_por_clase[clase] = imagenes
-        conteo_por_clase[clase] = len(imagenes)
+        imgs = sorted([p for p in (dir_origen / clase).iterdir()
+                        if p.suffix.lower() in extensiones_validas])
+        n_orig = len(imgs)
+        imgs, n_dup = deduplicar(imgs, umbral=dedup_umbral)
+        rng.shuffle(imgs)
+        imagenes_por_clase[clase] = imgs
+        dup_str = f" ({n_dup} duplicados filtrados)" if n_dup else ""
+        print(f"  {clase}: {n_orig} → {len(imgs)} unicas{dup_str}")
 
-    # El val por clase = mínimo entre val_por_clase y el 20% de la clase más pequeña
-    # Esto garantiza val perfectamente balanceado (misma N en todas las clases)
-    n_val_global = min(
-        val_por_clase,
-        min(max(1, len(imgs) // 5) for imgs in imagenes_por_clase.values())
-    )
+    # ── Fase 1b: Subsampling de clase mayoritaria si excede max_ratio ────────
+    min_count = min(len(imgs) for imgs in imagenes_por_clase.values())
+    max_allowed = int(min_count * max_ratio)
+    for clase, imgs in imagenes_por_clase.items():
+        if len(imgs) > max_allowed:
+            rng.shuffle(imgs)
+            removed = len(imgs) - max_allowed
+            imagenes_por_clase[clase] = imgs[:max_allowed]
+            print(f"  {clase}: subsampled {len(imgs)+removed} → {max_allowed} "
+                  f"(cap {max_ratio}x clase minoritaria)")
 
-    for clase, imagenes in imagenes_por_clase.items():
-        imagenes_val_por_clase[clase] = imagenes[:n_val_global]
-        imagenes_train_por_clase[clase] = imagenes[n_val_global:]
+    # ── Fase 2: Split balanceado test / val / train ──────────────────────────
+    min_clase = min(len(imgs) for imgs in imagenes_por_clase.values())
+    n_test = min(test_por_clase, max(5, min_clase // 10))
+    n_val  = min(val_por_clase, max(10, (min_clase - n_test) // 4))
 
-    # --- Fase 2: Oversampling de clase minoritaria en train ---
-    conteos_train = {c: len(imgs) for c, imgs in imagenes_train_por_clase.items()}
+    print(f"\nSplit balanceado: {n_test} test + {n_val} val por clase")
+
+    splits = {"train": {}, "val": {}, "test": {}}
+    for clase, imgs in imagenes_por_clase.items():
+        splits["test"][clase]  = imgs[:n_test]
+        splits["val"][clase]   = imgs[n_test : n_test + n_val]
+        splits["train"][clase] = imgs[n_test + n_val:]
+
+    # ── Fase 3: Oversampling clase minoritaria en train ───────────────────────
+    conteos_train = {c: len(imgs) for c, imgs in splits["train"].items()}
     max_train = max(conteos_train.values())
 
-    print("Distribucion original del dataset:")
-    for clase in clases:
-        total = conteo_por_clase[clase]
-        n_train = conteos_train[clase]
-        n_val = len(imagenes_val_por_clase[clase])
-        print(f"  {clase}: {total} total ({n_train} train / {n_val} val)")
-    print(f"  Val balanceado: {' + '.join(str(len(imagenes_val_por_clase[c]))+' '+c for c in clases)}")
+    print("\nDistribucion (imagenes unicas):")
+    for c in clases:
+        print(f"  {c}: {conteos_train[c]} train / {len(splits['val'][c])} val / "
+              f"{len(splits['test'][c])} test")
 
     oversampled = {}
-    for clase, imgs in imagenes_train_por_clase.items():
+    for clase, imgs in splits["train"].items():
         if len(imgs) < max_train:
             deficit = max_train - len(imgs)
-            extras = [rng.choice(imgs) for _ in range(deficit)]
-            oversampled[clase] = imgs + extras
-            print(f"\nOversampling '{clase}': {len(imgs)} -> {len(oversampled[clase])} "
+            oversampled[clase] = imgs + [rng.choice(imgs) for _ in range(deficit)]
+            print(f"\nOversampling '{clase}': {len(imgs)} → {len(oversampled[clase])} "
                   f"(+{deficit} duplicados)")
         else:
             oversampled[clase] = imgs
 
-    # --- Fase 3: Copiar archivos + generar crops ---
+    # ── Fase 4: Copiar archivos + crops offline ──────────────────────────────
     if dir_destino.exists():
         shutil.rmtree(dir_destino)
         print(f"\nDirectorio '{dir_destino}' limpiado.")
 
     print("\nCopiando imagenes y generando crops...")
-
     for clase in clases:
+        for split_name in ("train", "val", "test"):
+            (dir_destino / split_name / clase).mkdir(parents=True, exist_ok=True)
+
+        # Train
         dir_train = dir_destino / "train" / clase
-        dir_val = dir_destino / "val" / clase
-        dir_train.mkdir(parents=True, exist_ok=True)
-        dir_val.mkdir(parents=True, exist_ok=True)
-
         total_crops = 0
-
-        # Train (con oversampling + crops)
-        contador_duplicados = Counter()
+        contador = Counter()
         for img in oversampled[clase]:
-            contador_duplicados[img.name] += 1
-            if contador_duplicados[img.name] == 1:
-                destino = dir_train / img.name
-                stem = img.stem
-            else:
-                stem = f"{img.stem}_dup{contador_duplicados[img.name] - 1}"
-                destino = dir_train / f"{stem}{img.suffix}"
-            shutil.copy2(img, destino)
-
-            # Generar 3 crops aleatorios por imagen original (no duplicados)
-            if contador_duplicados[img.name] == 1:
+            contador[img.name] += 1
+            if contador[img.name] == 1:
+                shutil.copy2(img, dir_train / img.name)
                 total_crops += generar_crops_offline(
-                    img, dir_train, img.stem, img.suffix, rng, n_crops=3
-                )
+                    img, dir_train, img.stem, img.suffix, rng, n_crops=3)
+            else:
+                stem = f"{img.stem}_dup{contador[img.name] - 1}"
+                shutil.copy2(img, dir_train / f"{stem}{img.suffix}")
 
-        # Val (sin oversampling ni crops para evaluacion limpia)
-        for img in imagenes_val_por_clase[clase]:
-            shutil.copy2(img, dir_val / img.name)
+        # Val y Test (limpios)
+        for img in splits["val"][clase]:
+            shutil.copy2(img, dir_destino / "val" / clase / img.name)
+        for img in splits["test"][clase]:
+            shutil.copy2(img, dir_destino / "test" / clase / img.name)
 
-        n_train_final = len(list(dir_train.iterdir()))
-        n_val_final = len(list(dir_val.iterdir()))
-        print(f"  {clase}: {n_train_final} train ({total_crops} crops) / {n_val_final} val")
+        nt = len(list((dir_destino / "train" / clase).iterdir()))
+        nv = len(list((dir_destino / "val" / clase).iterdir()))
+        ns = len(list((dir_destino / "test" / clase).iterdir()))
+        print(f"  {clase}: {nt} train ({total_crops} crops) / {nv} val / {ns} test")
 
-    # --- Resumen final ---
-    total_train = sum(len(list((dir_destino / "train" / c).iterdir())) for c in clases)
-    total_val = sum(len(list((dir_destino / "val" / c).iterdir())) for c in clases)
-    print(f"\nTotal: {total_train} train + {total_val} val = {total_train + total_val}")
+    # ── Resumen ──────────────────────────────────────────────────────────────
+    t = sum(len(list((dir_destino / "train" / c).iterdir())) for c in clases)
+    v = sum(len(list((dir_destino / "val"   / c).iterdir())) for c in clases)
+    s = sum(len(list((dir_destino / "test"  / c).iterdir())) for c in clases)
+    print(f"\nTotal: {t} train + {v} val + {s} test = {t + v + s}")
     print("Preprocesamiento finalizado.")
 
 

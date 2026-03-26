@@ -1,18 +1,17 @@
 """
-app.py
-──────
-CacaoVision — Dashboard de diagnóstico de moniliasis en mazorcas de cacao.
+app.py — CacaoVision 2.0
+Dashboard de diagnóstico de moniliasis en mazorcas de cacao.
 Modelo: YOLOv11m-cls · Streamlit · Comalcalco, Tabasco · 2026
 """
 
 import streamlit as st
 from PIL import Image
 from ultralytics import YOLO
-import os
-import time
+import os, time, base64
+from io import BytesIO
 
 st.set_page_config(
-    page_title="CacaoVision · Diagnóstico de Cacao",
+    page_title="CacaoVision · Diagnóstico Inteligente",
     page_icon="🍫",
     layout="wide",
     initial_sidebar_state="collapsed",
@@ -22,575 +21,723 @@ UMBRAL_SANO       = 92.0
 UMBRAL_MONILIASIS = 10.0
 MODEL_PATH = "runs/classify/resultados_cacao/modelo_refinado/weights/best.pt"
 
-# ─────────────────────────────────────────────────────────────────────
-# SVG ICONS — todos originales, referencia visual al cacao de Tabasco
-# ─────────────────────────────────────────────────────────────────────
 
-# Mazorca de cacao vista lateral con costillas
-ICO_MAZORCA = (
-    '<svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">'
-    '<ellipse cx="16" cy="19" rx="8" ry="11" fill="url(#mg)"/>'
-    '<path d="M16 8 C16 8 13 4 10 3" stroke="#c19a6b" stroke-width="1.2" stroke-linecap="round"/>'
-    '<path d="M16 8 C16 8 19 5 22 4" stroke="#c19a6b" stroke-width="1.2" stroke-linecap="round"/>'
-    '<line x1="16" y1="8" x2="16" y2="30" stroke="#8b5e2a" stroke-width="1.4" stroke-linecap="round" opacity="0.6"/>'
-    '<path d="M9 15 C8 17 8 21 9 24" stroke="#e8c890" stroke-width="0.9" stroke-linecap="round" opacity="0.4"/>'
-    '<path d="M12 11 C11 13 11 17 12 20" stroke="#e8c890" stroke-width="0.9" stroke-linecap="round" opacity="0.4"/>'
-    '<path d="M20 11 C21 13 21 17 20 20" stroke="#e8c890" stroke-width="0.9" stroke-linecap="round" opacity="0.4"/>'
-    '<path d="M23 15 C24 17 24 21 23 24" stroke="#e8c890" stroke-width="0.9" stroke-linecap="round" opacity="0.4"/>'
-    '<defs><linearGradient id="mg" x1="8" y1="8" x2="24" y2="30" gradientUnits="userSpaceOnUse">'
-    '<stop offset="0%" stop-color="#a0723a"/>'
-    '<stop offset="50%" stop-color="#c8924e"/>'
-    '<stop offset="100%" stop-color="#6b3e1a"/>'
-    '</linearGradient></defs>'
-    '</svg>'
-)
-
-# Ojo con lupa — diagnóstico / análisis
-ICO_DIAG = (
-    '<svg viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">'
-    '<circle cx="9" cy="9" r="6.5" stroke="#c19a6b" stroke-width="1.4"/>'
-    '<circle cx="9" cy="9" r="3" fill="none" stroke="#d4a574" stroke-width="1.1" opacity="0.7"/>'
-    '<circle cx="9" cy="9" r="1.2" fill="#d4a574" opacity="0.9"/>'
-    '<line x1="13.8" y1="13.8" x2="19" y2="19" stroke="#c19a6b" stroke-width="1.6" stroke-linecap="round"/>'
-    '<circle cx="18.5" cy="18.5" r="1.5" fill="#8b5e2a"/>'
-    '</svg>'
-)
-
-# Onda de ADN simplificada — métricas / ciencia
-ICO_METRICS = (
-    '<svg viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">'
-    '<path d="M2 11 C4 7 6 5 8 7 C10 9 12 13 14 15 C16 17 18 15 20 11" stroke="#c19a6b" stroke-width="1.5" stroke-linecap="round" fill="none"/>'
-    '<path d="M2 11 C4 15 6 17 8 15 C10 13 12 9 14 7 C16 5 18 7 20 11" stroke="#8b5e2a" stroke-width="1" stroke-linecap="round" fill="none" opacity="0.5"/>'
-    '<line x1="5" y1="8" x2="5" y2="14" stroke="#d4a574" stroke-width="0.8" opacity="0.4"/>'
-    '<line x1="11" y1="6" x2="11" y2="16" stroke="#d4a574" stroke-width="0.8" opacity="0.4"/>'
-    '<line x1="17" y1="8" x2="17" y2="14" stroke="#d4a574" stroke-width="0.8" opacity="0.4"/>'
-    '</svg>'
-)
-
-# Brújula con rosa de los vientos — Comalcalco / origen
-ICO_ABOUT = (
-    '<svg viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">'
-    '<circle cx="11" cy="11" r="9" stroke="#c19a6b" stroke-width="1.3"/>'
-    '<circle cx="11" cy="11" r="1.5" fill="#d4a574"/>'
-    '<polygon points="11,3 12.2,9.5 11,11 9.8,9.5" fill="#d4a574"/>'
-    '<polygon points="11,19 12.2,12.5 11,11 9.8,12.5" fill="#8b5e2a" opacity="0.6"/>'
-    '<polygon points="3,11 9.5,9.8 11,11 9.5,12.2" fill="#8b5e2a" opacity="0.6"/>'
-    '<polygon points="19,11 12.5,9.8 11,11 12.5,12.2" fill="#c19a6b" opacity="0.4"/>'
-    '<circle cx="11" cy="3" r="1" fill="#d4a574"/>'
-    '</svg>'
-)
-
-# Hongo estilizado — símbolo de Moniliophthora roreri
-ICO_MONO = (
-    '<svg viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">'
-    '<path d="M3 12 C3 8 5.5 5 9 5 C12.5 5 15 8 15 12" fill="url(#fm)" opacity="0.9"/>'
-    '<rect x="8.2" y="12" width="1.6" height="4" rx="0.8" fill="#c04040"/>'
-    '<circle cx="6" cy="9.5" r="1" fill="rgba(255,100,100,0.3)"/>'
-    '<circle cx="9" cy="8" r="0.8" fill="rgba(255,100,100,0.25)"/>'
-    '<circle cx="12" cy="9.5" r="1" fill="rgba(255,100,100,0.3)"/>'
-    '<defs><linearGradient id="fm" x1="3" y1="5" x2="15" y2="12" gradientUnits="userSpaceOnUse">'
-    '<stop offset="0%" stop-color="#8b2020"/>'
-    '<stop offset="100%" stop-color="#c04040"/>'
-    '</linearGradient></defs>'
-    '</svg>'
-)
-
-# Hoja tropical con venación — símbolo de planta sana
-ICO_SANO = (
-    '<svg viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">'
-    '<path d="M9 16 C9 16 2 12 2 6 C2 3 5 2 9 4 C13 2 16 3 16 6 C16 12 9 16 9 16Z" fill="url(#fs)"/>'
-    '<line x1="9" y1="16" x2="9" y2="4" stroke="#1a6b2a" stroke-width="0.9" stroke-linecap="round" opacity="0.5"/>'
-    '<path d="M9 8 C7 7 5 7 4 8" stroke="#2e8b3e" stroke-width="0.7" stroke-linecap="round" opacity="0.6"/>'
-    '<path d="M9 11 C7 10 5 10.5 4 12" stroke="#2e8b3e" stroke-width="0.7" stroke-linecap="round" opacity="0.6"/>'
-    '<path d="M9 8 C11 7 13 7 14 8" stroke="#2e8b3e" stroke-width="0.7" stroke-linecap="round" opacity="0.6"/>'
-    '<defs><linearGradient id="fs" x1="2" y1="2" x2="16" y2="16" gradientUnits="userSpaceOnUse">'
-    '<stop offset="0%" stop-color="#2e7d32"/>'
-    '<stop offset="100%" stop-color="#1b5e20"/>'
-    '</linearGradient></defs>'
-    '</svg>'
-)
-
-# Interrogante orgánico — incierto
-ICO_DOUBT = (
-    '<svg viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">'
-    '<path d="M7 7 C7 5 8 4 9 4 C10.5 4 11.5 5 11.5 6.5 C11.5 8 10 8.5 9 10" stroke="#c8a83a" stroke-width="1.5" stroke-linecap="round" fill="none"/>'
-    '<circle cx="9" cy="13" r="1.1" fill="#c8a83a"/>'
-    '<circle cx="9" cy="9" r="8" stroke="#c8a83a" stroke-width="1" opacity="0.25"/>'
-    '</svg>'
-)
+def img_to_b64(pil_img, fmt="JPEG", max_size=700):
+    img = pil_img.copy()
+    img.thumbnail((max_size, max_size), Image.LANCZOS)
+    buf = BytesIO()
+    img.save(buf, format=fmt, quality=90)
+    b64 = base64.b64encode(buf.getvalue()).decode()
+    return f"data:image/jpeg;base64,{b64}"
 
 
-def svg_img(svg_str, size="1.1rem"):
-    """Convierte SVG inline a data URI para usar en HTML."""
-    encoded = svg_str.replace('"', "'").replace('\n', '').replace('#', '%23')
-    return f'<img src="data:image/svg+xml;charset=utf-8,{encoded}" style="width:{size};height:{size};vertical-align:middle;display:inline-block"/>'
-
-
-# ─────────────────────────────────────────────────────────────────────
+# ═════════════════════════════════════════════════════════════════════
 # CSS
-# ─────────────────────────────────────────────────────────────────────
+# ═════════════════════════════════════════════════════════════════════
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&family=Playfair+Display:ital,wght@0,700;1,400&family=JetBrains+Mono:wght@400;500&display=swap');
 
-/* ── Reset / Streamlit overrides ── */
-#MainMenu, header, footer { visibility: hidden; }
-.stApp { background: #0a0805; }
-.block-container {
-    padding: 0 !important;
-    max-width: 100% !important;
+:root {
+    --bg: #1b120c;
+    --bg-warm: #231810;
+    --bg-card: #2a1d14;
+    --bg-card-hover: #33241a;
+    --border: rgba(255,255,255,0.06);
+    --border-hover: rgba(255,255,255,0.12);
+    --caramel: #d4a574;
+    --caramel-light: #e8c49a;
+    --caramel-dark: #a07848;
+    --white: #faf8f5;
+    --white-soft: #e8e0d8;
+    --white-dim: #b8a898;
+    --white-muted: #7a6a5a;
+    --green: #4ade80;
+    --green-dim: #22c55e;
+    --red: #f87171;
+    --red-dim: #ef4444;
+    --amber: #fbbf24;
+    --radius: 16px;
+    --radius-sm: 10px;
 }
+
+/* ── RESET ── */
+#MainMenu, header, footer { visibility: hidden; }
 section[data-testid="stSidebar"] { display: none; }
+.block-container { padding: 0 !important; max-width: 100% !important; }
+.stApp { background: var(--bg); }
 
 html, body, [class*="css"] {
-    font-family: 'Space Grotesk', sans-serif;
-    color: #c4a882;
+    font-family: 'Poppins', -apple-system, sans-serif;
+    color: var(--white-soft);
+}
+.stMarkdown p, p { color: var(--white-dim); }
+
+/* ══════════════════════════════════════
+   ANIMATED BACKGROUND
+   ══════════════════════════════════════ */
+
+/* Warm ambient glow */
+.bg-layer {
+    position: fixed; inset: 0; z-index: 0;
+    pointer-events: none; overflow: hidden;
+}
+.glow {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(120px);
+    opacity: 0.5;
+}
+.glow-1 {
+    width: 50vmax; height: 50vmax;
+    top: -20%; left: -10%;
+    background: rgba(120,70,30,0.15);
+    animation: glowDrift1 22s ease-in-out infinite alternate;
+}
+.glow-2 {
+    width: 40vmax; height: 40vmax;
+    bottom: -15%; right: -10%;
+    background: rgba(90,50,20,0.12);
+    animation: glowDrift2 28s ease-in-out infinite alternate;
+}
+@keyframes glowDrift1 {
+    0%   { transform: translate(0, 0); }
+    100% { transform: translate(5vw, 8vh); }
+}
+@keyframes glowDrift2 {
+    0%   { transform: translate(0, 0); }
+    100% { transform: translate(-6vw, -5vh); }
 }
 
-/* ── HERO ── */
+/* Floating cacao beans */
+.beans {
+    position: fixed; inset: 0; z-index: 0;
+    pointer-events: none; overflow: hidden;
+}
+.bean {
+    position: absolute;
+    bottom: -30px;
+    opacity: 0;
+    animation: beanFloat linear infinite;
+}
+.bean svg { filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3)); }
+.bean:nth-child(1) { left: 8%;  animation-duration: 20s; animation-delay: 0s; }
+.bean:nth-child(2) { left: 22%; animation-duration: 26s; animation-delay: 4s; }
+.bean:nth-child(3) { left: 40%; animation-duration: 23s; animation-delay: 2s; }
+.bean:nth-child(4) { left: 58%; animation-duration: 28s; animation-delay: 6s; }
+.bean:nth-child(5) { left: 75%; animation-duration: 21s; animation-delay: 1s; }
+.bean:nth-child(6) { left: 90%; animation-duration: 25s; animation-delay: 8s; }
+
+@keyframes beanFloat {
+    0%   { transform: translateY(0) rotate(0deg) scale(0.7); opacity: 0; }
+    5%   { opacity: 0.12; }
+    50%  { opacity: 0.08; }
+    95%  { opacity: 0.12; }
+    100% { transform: translateY(-110vh) rotate(360deg) scale(0.7); opacity: 0; }
+}
+
+/* Mesoamerican greca pattern — top border */
+.greca {
+    position: relative; z-index: 1;
+    width: 100%; height: 6px;
+    overflow: hidden;
+}
+.greca-inner {
+    width: 200%; height: 100%;
+    background: repeating-linear-gradient(
+        90deg,
+        var(--caramel) 0px, var(--caramel) 6px,
+        transparent 6px, transparent 10px,
+        var(--caramel-dark) 10px, var(--caramel-dark) 12px,
+        transparent 12px, transparent 18px,
+        var(--caramel) 18px, var(--caramel) 20px,
+        transparent 20px, transparent 30px
+    );
+    opacity: 0.15;
+    animation: grecaMove 40s linear infinite;
+}
+@keyframes grecaMove {
+    0%   { transform: translateX(0); }
+    100% { transform: translateX(-50%); }
+}
+
+/* ══════════════════════════════════════
+   HERO
+   ══════════════════════════════════════ */
 .hero {
-    width: 100%;
-    background: #0a0805;
-    padding: 3.2rem 2rem 0;
+    position: relative; z-index: 1;
     text-align: center;
-    position: relative;
-    overflow: hidden;
+    padding: 3.5rem 1.5rem 2.5rem;
 }
-.hero::before {
-    content: '';
-    position: absolute; inset: 0;
-    background:
-        radial-gradient(ellipse 70% 80% at 15% 20%, rgba(160,110,50,0.11) 0%, transparent 60%),
-        radial-gradient(ellipse 50% 70% at 85% 15%, rgba(100,50,15,0.09) 0%, transparent 55%),
-        radial-gradient(ellipse 90% 40% at 50% 100%, rgba(80,40,10,0.07) 0%, transparent 55%);
-    pointer-events: none;
-    animation: meshDrift 14s ease-in-out infinite alternate;
-}
-@keyframes meshDrift {
-    from { opacity: .65; transform: scale(1) rotate(0deg); }
-    to   { opacity: 1;   transform: scale(1.05) rotate(1deg); }
-}
-.hero-inner {
-    position: relative;
-    max-width: 860px;
-    margin: 0 auto;
-}
-.hero-pod {
-    width: 72px; height: 72px;
-    margin: 0 auto 1.4rem;
-    filter: drop-shadow(0 0 22px rgba(193,154,107,0.35));
-    animation: podFloat 7s ease-in-out infinite;
-    display: block;
-}
-@keyframes podFloat {
-    0%, 100% { transform: translateY(0) rotate(-1deg); }
-    50%       { transform: translateY(-7px) rotate(1deg); }
-}
-.hero-eyebrow {
+.hero-location {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 1.1rem;
+    border-radius: 50px;
+    background: rgba(212,165,116,0.08);
+    border: 1px solid rgba(212,165,116,0.15);
     font-family: 'JetBrains Mono', monospace;
-    font-size: 0.62rem;
-    letter-spacing: 4px;
-    text-transform: uppercase;
-    color: #6a5035;
-    margin-bottom: 0.6rem;
-}
-.hero-title {
-    font-family: 'Instrument Serif', serif;
-    font-style: italic;
-    font-size: clamp(2.6rem, 4.5vw, 4rem);
-    font-weight: 400;
-    line-height: 1.1;
-    background: linear-gradient(130deg, #b8874a 0%, #f0d090 30%, #c19a6b 60%, #edd898 100%);
-    background-size: 220% auto;
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-    animation: titleShimmer 5s linear infinite;
-    margin: 0 0 0.5rem;
-}
-@keyframes titleShimmer {
-    0%   { background-position: 0% center; }
-    100% { background-position: 220% center; }
-}
-.hero-desc {
-    font-size: 0.87rem;
-    color: #5a4232;
-    max-width: 500px;
-    margin: 0 auto 2.4rem;
-    line-height: 1.65;
-}
-
-/* ── BENTO STATS ── */
-.bento {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    max-width: 680px;
-    margin: 0 auto 0;
-    border: 1px solid rgba(193,154,107,0.08);
-    border-radius: 16px;
-    overflow: hidden;
-    background: rgba(193,154,107,0.04);
-}
-.bc {
-    background: rgba(10,8,5,0.85);
-    padding: 1.1rem 0.6rem;
-    text-align: center;
-    border-right: 1px solid rgba(193,154,107,0.06);
-    transition: background .2s;
-}
-.bc:last-child { border-right: none; }
-.bc:hover { background: rgba(193,154,107,0.05); }
-.bc-icon { margin-bottom: 0.5rem; line-height: 1; }
-.bc-val {
-    font-family: 'Instrument Serif', serif;
-    font-style: italic;
-    font-size: 1.35rem;
-    color: #d4a574;
-    line-height: 1;
-    margin-bottom: 0.3rem;
-}
-.bc-lbl {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.55rem;
-    letter-spacing: 1.8px;
-    text-transform: uppercase;
-    color: #4a3525;
+    font-size: 0.6rem;
     font-weight: 500;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--caramel);
+    margin-bottom: 1.8rem;
+}
+.hero-location .live-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 8px var(--green);
+    animation: pulse 2s ease-in-out infinite;
+}
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
 }
 
-/* ── NAV DIVIDER ── */
-.nav-divider {
-    width: 100%; height: 1px;
-    background: rgba(193,154,107,0.07);
-    margin: 0;
+.hero-title {
+    font-family: 'Playfair Display', serif;
+    font-weight: 700;
+    font-size: clamp(2.8rem, 7vw, 5rem);
+    line-height: 1.05;
+    color: var(--white);
+    margin: 0 0 0.6rem;
+    letter-spacing: -0.01em;
+}
+.hero-sub {
+    font-family: 'Poppins', sans-serif;
+    font-weight: 300;
+    font-size: clamp(0.85rem, 2vw, 1.15rem);
+    color: var(--white-dim);
+    margin: 0 auto 2.5rem;
+    max-width: 520px;
+    line-height: 1.7;
+}
+.hero-sub em {
+    color: var(--caramel-light);
+    font-style: italic;
 }
 
-/* ── TABS ── */
+/* Stats strip */
+.stats {
+    display: flex;
+    justify-content: center;
+    max-width: 720px;
+    margin: 0 auto;
+    border-radius: var(--radius);
+    overflow: hidden;
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+}
+.stat {
+    flex: 1;
+    padding: 1.2rem 0.8rem;
+    text-align: center;
+    border-right: 1px solid var(--border);
+    transition: background 0.3s;
+}
+.stat:last-child { border-right: none; }
+.stat:hover { background: var(--bg-card-hover); }
+.stat-val {
+    font-family: 'Poppins', sans-serif;
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: var(--white);
+}
+.stat-lbl {
+    font-size: 0.6rem;
+    font-weight: 500;
+    color: var(--white-muted);
+    margin-top: 0.2rem;
+    letter-spacing: 0.5px;
+}
+
+/* ══════════════════════════════════════
+   TABS
+   ══════════════════════════════════════ */
 .stTabs [data-baseweb="tab-list"] {
     gap: 0;
     justify-content: center;
     background: transparent;
-    border-bottom: 1px solid rgba(193,154,107,0.07);
-    padding: 0;
-    margin: 0;
+    border-bottom: 1px solid var(--border);
+    padding: 0; margin: 0;
 }
 .stTabs [data-baseweb="tab"] {
-    font-family: 'Space Grotesk', sans-serif;
+    font-family: 'Poppins', sans-serif;
     font-size: 0.7rem;
     font-weight: 600;
-    letter-spacing: 2.5px;
+    letter-spacing: 2px;
     text-transform: uppercase;
-    color: #3d2e1e !important;
-    padding: 1rem 2.5rem;
+    color: var(--white-muted) !important;
+    padding: 1rem 2rem;
     border: none !important;
     background: transparent !important;
-    transition: color .2s;
-    display: flex; align-items: center; gap: 0.5rem;
+    transition: color 0.3s;
 }
-.stTabs [data-baseweb="tab"]:hover { color: #a08060 !important; }
+.stTabs [data-baseweb="tab"]:hover { color: var(--caramel) !important; }
 .stTabs [aria-selected="true"] {
-    color: #d4a574 !important;
-    border-bottom: 1.5px solid #c19a6b !important;
+    color: var(--white) !important;
+    border-bottom: 2px solid var(--caramel) !important;
 }
-.stTabs [data-baseweb="tab-highlight"] { background-color: #c19a6b !important; }
+.stTabs [data-baseweb="tab-highlight"] { background-color: var(--caramel) !important; }
 .stTabs [data-baseweb="tab-border"] { display: none; }
 
-/* ── MAIN CONTENT WRAPPER ── */
-.main-pad {
+/* ══════════════════════════════════════
+   CONTENT
+   ══════════════════════════════════════ */
+.content {
+    position: relative; z-index: 1;
     max-width: 1200px;
     margin: 0 auto;
-    padding: 1.8rem 2.5rem 0;
+    padding: 1.5rem 2rem 0;
 }
 
-/* ── FILE UPLOADER ── */
+/* ── UPLOADER ── */
 [data-testid="stFileUploader"] {
-    background: rgba(16,10,6,0.6);
-    border: 1px dashed rgba(193,154,107,0.15);
-    border-radius: 18px;
-    padding: 0.6rem;
-    transition: border-color .3s;
+    background: var(--bg-card);
+    border: 1.5px dashed rgba(212,165,116,0.18);
+    border-radius: var(--radius);
+    padding: 0.5rem;
+    transition: all 0.3s;
 }
-[data-testid="stFileUploader"]:hover { border-color: rgba(193,154,107,0.3); }
-[data-testid="stFileUploader"] label { color: #907050 !important; }
-[data-testid="stFileUploader"] small { color: #4a3828 !important; }
+[data-testid="stFileUploader"]:hover {
+    border-color: rgba(212,165,116,0.35);
+    background: var(--bg-card-hover);
+}
+[data-testid="stFileUploader"] label { color: var(--white-dim) !important; font-family: 'Poppins' !important; }
+[data-testid="stFileUploader"] small { color: var(--white-muted) !important; }
 [data-testid="stFileUploaderDropzone"] {
-    background: rgba(25,15,8,0.45) !important;
-    border-color: rgba(193,154,107,0.1) !important;
+    background: rgba(27,18,12,0.5) !important;
+    border-color: rgba(212,165,116,0.08) !important;
 }
 
-/* ── UPLOAD PROMPT ── */
-.up-prompt {
+/* ── EMPTY STATE ── */
+.empty {
     text-align: center;
-    padding: 5rem 1rem 4rem;
+    padding: 4rem 1rem 3rem;
 }
-.up-pod {
-    width: 64px; height: 64px;
+.empty-pod {
+    width: 72px; height: 72px;
     margin: 0 auto 1.2rem;
-    opacity: 0.2;
-    filter: drop-shadow(0 0 12px rgba(193,154,107,0.2));
-    display: block;
+    opacity: 0.18;
+    animation: floatPod 5s ease-in-out infinite;
 }
-.up-text { font-size: 0.82rem; color: #4a3828; line-height: 1.75; }
-.up-hint {
+@keyframes floatPod {
+    0%, 100% { transform: translateY(0) rotate(-2deg); }
+    50% { transform: translateY(-8px) rotate(2deg); }
+}
+.empty-msg {
+    font-size: 0.95rem;
+    font-weight: 400;
+    color: var(--white-muted);
+    line-height: 1.8;
+}
+.empty-hint {
     font-family: 'JetBrains Mono', monospace;
-    font-size: 0.62rem; color: #3a2a1a;
-    letter-spacing: 1.5px; margin-top: 0.5rem;
+    font-size: 0.6rem;
+    color: var(--white-muted);
+    opacity: 0.5;
+    margin-top: 0.6rem;
+    letter-spacing: 1.5px;
 }
 
-/* ── RESULTS HEADER ── */
-.res-hdr {
+/* ── SUMMARY ── */
+.summary {
     display: flex;
     align-items: center;
     justify-content: center;
+    flex-wrap: wrap;
     gap: 1.5rem;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.6rem;
-    letter-spacing: 2px;
-    text-transform: uppercase;
-    color: #4a3828;
-    padding: 1rem 0;
-    border-bottom: 1px solid rgba(193,154,107,0.05);
+    padding: 0.8rem 0;
     margin-bottom: 1.2rem;
+    border-bottom: 1px solid var(--border);
 }
-.res-hdr span { display: inline-flex; align-items: center; gap: 0.35rem; }
+.sum-item {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--white-dim);
+}
+.sum-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+.d-all   { background: var(--caramel); }
+.d-sano  { background: var(--green);   box-shadow: 0 0 6px rgba(74,222,128,0.4); }
+.d-mono  { background: var(--red);     box-shadow: 0 0 6px rgba(248,113,113,0.4); }
+.d-doubt { background: var(--amber);   box-shadow: 0 0 6px rgba(251,191,36,0.4); }
 
-/* ── RESULT CARD ── */
+/* ══════════════════════════════════════
+   RESULT CARDS
+   ══════════════════════════════════════ */
 .rcard {
-    position: relative;
-    background: linear-gradient(158deg, #110d08 0%, #18100a 100%);
-    border-radius: 20px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
     overflow: hidden;
-    margin-bottom: 1.2rem;
-    transition: transform .3s cubic-bezier(.2,.8,.2,1), box-shadow .3s;
-    border: 1px solid rgba(193,154,107,0.07);
+    margin-bottom: 1rem;
+    transition: all 0.35s ease;
 }
-.rcard:hover { transform: translateY(-5px); }
-.rcard.g-sano:hover  { box-shadow: 0 22px 55px rgba(40,160,60,0.13);  border-color: rgba(40,160,60,0.12); }
-.rcard.g-mono:hover  { box-shadow: 0 22px 55px rgba(210,50,50,0.15);  border-color: rgba(210,50,50,0.12); }
-.rcard.g-doubt:hover { box-shadow: 0 22px 55px rgba(195,155,40,0.13); border-color: rgba(195,155,40,0.10); }
-.rcard-body { padding: 0.85rem 0.9rem 0.9rem; }
+.rcard:hover {
+    transform: translateY(-3px);
+    border-color: var(--border-hover);
+    box-shadow: 0 12px 35px rgba(0,0,0,0.25);
+}
+.rcard.rc-sano:hover  { box-shadow: 0 12px 35px rgba(74,222,128,0.07); }
+.rcard.rc-mono:hover  { box-shadow: 0 12px 35px rgba(248,113,113,0.09); }
+.rcard.rc-doubt:hover { box-shadow: 0 12px 35px rgba(251,191,36,0.07); }
 
-/* ── BADGES ── */
-.diag { display: flex; justify-content: center; padding: 0.3rem 0 0.1rem; }
-.badge {
-    display: inline-flex; align-items: center; gap: 0.4rem;
-    padding: 0.42rem 1rem;
-    border-radius: 40px;
-    font-family: 'Space Grotesk', sans-serif;
-    font-size: 0.67rem; font-weight: 700;
-    letter-spacing: 1.4px; text-transform: uppercase;
+.rcard-img {
+    position: relative;
+    background: #120c08;
+    overflow: hidden;
 }
-.b-sano  { background: rgba(35,110,45,0.12); color: #55cc65; border: 1px solid rgba(35,110,45,0.2); }
-.b-mono  { background: rgba(190,35,35,0.12); color: #ee5050; border: 1px solid rgba(190,35,35,0.2); }
-.b-doubt { background: rgba(190,148,30,0.12); color: #d4a535; border: 1px solid rgba(190,148,30,0.2); }
+.rcard-img img {
+    width: 100%;
+    height: auto;
+    display: block;
+    transition: transform 0.4s;
+}
+.rcard:hover .rcard-img img { transform: scale(1.02); }
 
-/* ── DUAL BARS ── */
-.conf-wrap { padding: 0.5rem 0.2rem 0.2rem; }
-.cbar {
-    display: flex; align-items: center; gap: 0.55rem;
-    margin-bottom: 0.32rem;
+/* Scan effect */
+.scan {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--caramel-light), transparent);
+    opacity: 0;
+    animation: scanAnim 2s ease-in-out 0.3s forwards;
 }
-.cbar-lbl {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.55rem; color: #4a3828;
-    width: 32px; flex-shrink: 0; text-align: right;
-    letter-spacing: 0.4px;
-}
-.cbar-track {
-    flex: 1; height: 3px;
-    background: rgba(193,154,107,0.07);
-    border-radius: 2px; overflow: hidden;
-}
-.fill-s { height:100%; background: linear-gradient(90deg,#1b5e20,#55cc65); border-radius:2px; transition: width .8s ease; }
-.fill-m { height:100%; background: linear-gradient(90deg,#b71c1c,#ee5050); border-radius:2px; transition: width .8s ease; }
-.cbar-pct {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.55rem; color: #6a5535;
-    width: 36px; flex-shrink: 0; letter-spacing: 0.4px;
+@keyframes scanAnim {
+    0%   { top: 0; opacity: 0; }
+    8%   { opacity: 0.6; }
+    92%  { opacity: 0.6; }
+    100% { top: 100%; opacity: 0; }
 }
 
-/* ── METRICS ── */
-.met-hdr { padding: 0.5rem 0 1.2rem; }
-.met-title {
-    font-family: 'Instrument Serif', serif;
-    font-style: italic;
-    font-size: 1.7rem; color: #d4a574; margin-bottom: 0.3rem;
+/* Status dot */
+.status-dot {
+    position: absolute;
+    top: 8px; right: 8px;
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    z-index: 2;
+    border: 2px solid rgba(0,0,0,0.3);
 }
-.met-sub { font-size: 0.78rem; color: #4a3828; }
-.streamlit-expanderHeader {
-    font-family: 'Space Grotesk', sans-serif;
-    font-weight: 500; font-size: 0.8rem;
-    color: #907050 !important;
-    background: rgba(16,10,6,0.5) !important;
-    border: 1px solid rgba(193,154,107,0.07) !important;
-    border-radius: 12px !important;
+.sd-sano  { background: var(--green); box-shadow: 0 0 10px var(--green); }
+.sd-mono  { background: var(--red);   box-shadow: 0 0 10px var(--red); }
+.sd-doubt { background: var(--amber); box-shadow: 0 0 10px var(--amber); }
+
+/* Card body */
+.rcard-body {
+    padding: 0.9rem 1rem;
 }
 
-/* ── ABOUT ── */
-.about-outer {
+/* Badge */
+.dbadge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.35rem 0.9rem;
+    border-radius: 50px;
+    font-family: 'Poppins', sans-serif;
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+}
+.db-sano {
+    background: rgba(74,222,128,0.1);
+    color: var(--green);
+    border: 1px solid rgba(74,222,128,0.2);
+}
+.db-mono {
+    background: rgba(248,113,113,0.1);
+    color: var(--red);
+    border: 1px solid rgba(248,113,113,0.2);
+}
+.db-doubt {
+    background: rgba(251,191,36,0.1);
+    color: var(--amber);
+    border: 1px solid rgba(251,191,36,0.2);
+}
+
+/* Circular gauges */
+.gauges {
     display: flex;
     justify-content: center;
-    padding: 1.8rem 2.5rem 0;
+    gap: 1rem;
+    padding: 0.8rem 0 0.2rem;
 }
+.gauge {
+    position: relative;
+    width: 60px; height: 60px;
+}
+.gauge svg {
+    transform: rotate(-90deg);
+    width: 60px; height: 60px;
+}
+.g-bg {
+    fill: none;
+    stroke: rgba(255,255,255,0.05);
+    stroke-width: 3.5;
+}
+.g-fill {
+    fill: none;
+    stroke-width: 3.5;
+    stroke-linecap: round;
+    transition: stroke-dashoffset 1s cubic-bezier(0.4,0,0.2,1);
+}
+.gf-s { stroke: var(--green); }
+.gf-m { stroke: var(--red); }
+.g-center {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%,-50%);
+    text-align: center;
+}
+.g-pct {
+    font-family: 'Poppins', sans-serif;
+    font-size: 0.7rem;
+    font-weight: 700;
+    line-height: 1;
+}
+.gp-s { color: var(--green); }
+.gp-m { color: var(--red); }
+.g-lbl {
+    font-size: 0.42rem;
+    font-weight: 500;
+    color: var(--white-muted);
+    margin-top: 1px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+}
+
+/* ══════════════════════════════════════
+   METRICS TAB
+   ══════════════════════════════════════ */
+.met-hdr { padding: 0.5rem 0 1.2rem; }
+.met-title {
+    font-family: 'Playfair Display', serif;
+    font-weight: 700;
+    font-size: 1.8rem;
+    color: var(--white);
+    margin-bottom: 0.3rem;
+}
+.met-sub { font-size: 0.85rem; color: var(--white-muted); }
+.streamlit-expanderHeader {
+    font-family: 'Poppins', sans-serif !important;
+    font-weight: 600 !important;
+    font-size: 0.82rem !important;
+    color: var(--white-dim) !important;
+    background: var(--bg-card) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: var(--radius-sm) !important;
+}
+
+/* ══════════════════════════════════════
+   ABOUT TAB
+   ══════════════════════════════════════ */
 .about {
-    width: 100%;
-    max-width: 660px;
+    max-width: 700px;
+    margin: 0 auto;
+    padding: 1rem 0 2rem;
 }
-.about-eyebrow {
+.about-tag {
     font-family: 'JetBrains Mono', monospace;
-    font-size: 0.6rem; letter-spacing: 3.5px;
-    text-transform: uppercase; color: #4a3525;
-    margin-bottom: 0.9rem;
-    display: flex; align-items: center; gap: 0.6rem;
+    font-size: 0.6rem;
+    font-weight: 500;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--caramel);
+    margin-bottom: 0.8rem;
 }
-.about-title {
-    font-family: 'Instrument Serif', serif;
-    font-style: italic;
-    font-size: 2.1rem; color: #d4a574; margin-bottom: 1.1rem;
+.about-h {
+    font-family: 'Playfair Display', serif;
+    font-weight: 700;
+    font-size: clamp(1.8rem, 4vw, 2.4rem);
+    color: var(--white);
+    margin-bottom: 1.3rem;
+    line-height: 1.2;
 }
-.about-body { font-size: 0.87rem; color: #6a5535; line-height: 1.78; margin-bottom: 0.9rem; }
-.about-hr { height:1px; background: rgba(193,154,107,0.07); margin: 1.4rem 0; }
-.about-grid {
+.about-p {
+    font-size: 0.9rem;
+    font-weight: 400;
+    color: var(--white-dim);
+    line-height: 1.9;
+    margin-bottom: 1rem;
+}
+.about-hr {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--border), transparent);
+    margin: 1.8rem 0;
+}
+.specs {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
     gap: 0.8rem;
 }
-.aitem {
-    padding: 1rem 1.1rem;
-    background: rgba(16,10,6,0.6);
-    border-radius: 14px;
-    border: 1px solid rgba(193,154,107,0.06);
-    display: flex; align-items: flex-start; gap: 0.7rem;
-    min-height: 72px;
+.spec {
+    padding: 1.1rem;
+    background: var(--bg-card);
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    transition: all 0.3s;
 }
-.aitem-icon {
-    flex-shrink: 0;
-    width: 28px; height: 28px;
-    display: flex; align-items: center; justify-content: center;
-    margin-top: 2px;
+.spec:hover {
+    border-color: var(--border-hover);
+    background: var(--bg-card-hover);
+    transform: translateY(-2px);
 }
-.aitem-k {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.55rem; letter-spacing: 2px;
-    text-transform: uppercase; color: #4a3525;
-    margin-bottom: 0.35rem;
+.spec-k {
+    font-size: 0.55rem;
+    font-weight: 600;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--white-muted);
+    margin-bottom: 0.4rem;
 }
-.aitem-v { font-size: 0.88rem; color: #c4a882; font-weight: 500; }
-
-/* ── SPINNER ── */
-.stSpinner > div { border-top-color: #c19a6b !important; }
-
-/* ── GLOBAL TEXT ── */
-.stMarkdown p, p, label { color: #6a5535; }
-h1, h2, h3, h4 {
-    color: #d4a574 !important;
-    font-family: 'Instrument Serif', serif !important;
-    font-style: italic;
+.spec-v {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--caramel-light);
 }
 
-/* ── FOOTER ── */
-.site-footer {
+/* ══════════════════════════════════════
+   FOOTER
+   ══════════════════════════════════════ */
+.foot {
+    position: relative; z-index: 1;
     text-align: center;
-    padding: 2.5rem 0 1.5rem;
-    border-top: 1px solid rgba(193,154,107,0.05);
-    margin-top: 3rem;
+    padding: 2.5rem 1rem 1.5rem;
+    margin-top: 2rem;
+    border-top: 1px solid var(--border);
 }
-.ft-org {
-    font-family: 'Instrument Serif', serif;
-    font-style: italic;
-    font-size: 0.9rem; color: #4a3525; margin-bottom: 0.3rem;
+.foot-brand {
+    font-family: 'Playfair Display', serif;
+    font-weight: 700;
+    font-size: 0.95rem;
+    color: var(--caramel-dark);
+    margin-bottom: 0.3rem;
 }
-.ft-copy {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.55rem; letter-spacing: 2.5px;
-    text-transform: uppercase; color: #2e2015;
+.foot-copy {
+    font-size: 0.55rem;
+    font-weight: 500;
+    color: var(--white-muted);
+    opacity: 0.5;
+    letter-spacing: 1.5px;
+}
+
+/* ── MISC ── */
+.stSpinner > div { border-top-color: var(--caramel) !important; }
+h1, h2, h3, h4 {
+    color: var(--white) !important;
+    font-family: 'Poppins', sans-serif !important;
+}
+
+/* ══════════════════════════════════════
+   RESPONSIVE
+   ══════════════════════════════════════ */
+@media (max-width: 768px) {
+    .hero { padding: 2.5rem 1rem 2rem; }
+    .hero-title { font-size: 2.4rem; }
+    .hero-sub { font-size: 0.85rem; }
+    .stats { flex-wrap: wrap; }
+    .stat { min-width: 45%; }
+    .content { padding: 1rem 1rem 0; }
+    .summary { gap: 0.8rem; }
+    .sum-item { font-size: 0.65rem; }
+    .gauges { gap: 0.6rem; }
+    .gauge { width: 52px; height: 52px; }
+    .gauge svg { width: 52px; height: 52px; }
+    .g-pct { font-size: 0.6rem; }
+    .specs { grid-template-columns: 1fr; }
+    .about-h { font-size: 1.6rem; }
+    .stTabs [data-baseweb="tab"] {
+        padding: 0.8rem 1rem;
+        font-size: 0.6rem;
+        letter-spacing: 1.5px;
+    }
+}
+@media (max-width: 480px) {
+    .hero { padding: 2rem 0.8rem 1.5rem; }
+    .hero-title { font-size: 2rem; }
+    .hero-location { font-size: 0.5rem; padding: 0.3rem 0.8rem; }
+    .stats { flex-direction: column; }
+    .stat { border-right: none; border-bottom: 1px solid var(--border); }
+    .stat:last-child { border-bottom: none; }
+    .content { padding: 0.8rem 0.6rem 0; }
+    .rcard-body { padding: 0.7rem 0.8rem; }
+    .summary { flex-direction: column; gap: 0.5rem; }
 }
 </style>
 """, unsafe_allow_html=True)
 
 
-# ─────────────────────────────────────────────────────────────────────
-# HERO
-# ─────────────────────────────────────────────────────────────────────
-POD_HERO = (
-    '<svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">'
-    '<ellipse cx="32" cy="38" rx="15" ry="20" fill="url(#hg)"/>'
-    '<path d="M32 18 C32 18 27 12 22 10" stroke="#c8974a" stroke-width="1.5" stroke-linecap="round"/>'
-    '<path d="M32 18 C32 18 37 13 42 11" stroke="#c8974a" stroke-width="1.5" stroke-linecap="round"/>'
-    '<path d="M18 29 C16 32 16 38 17 43" stroke="#e8c478" stroke-width="1.1" stroke-linecap="round" opacity="0.5"/>'
-    '<path d="M23 21 C21 24 21 30 22 35" stroke="#e8c478" stroke-width="1.1" stroke-linecap="round" opacity="0.5"/>'
-    '<path d="M41 21 C43 24 43 30 42 35" stroke="#e8c478" stroke-width="1.1" stroke-linecap="round" opacity="0.5"/>'
-    '<path d="M46 29 C48 32 48 38 47 43" stroke="#e8c478" stroke-width="1.1" stroke-linecap="round" opacity="0.5"/>'
-    '<line x1="32" y1="18" x2="32" y2="58" stroke="#8b5c25" stroke-width="1.8" stroke-linecap="round" opacity="0.55"/>'
-    '<defs><linearGradient id="hg" x1="17" y1="18" x2="47" y2="58" gradientUnits="userSpaceOnUse">'
-    '<stop offset="0%" stop-color="#96692e"/>'
-    '<stop offset="45%" stop-color="#c8924a"/>'
-    '<stop offset="100%" stop-color="#5e3010"/>'
-    '</linearGradient></defs>'
+# ═════════════════════════════════════════════════════════════════════
+# BACKGROUND — glows + floating cacao beans
+# ═════════════════════════════════════════════════════════════════════
+BEAN_SVG = (
+    '<svg width="20" height="28" viewBox="0 0 20 28" fill="none" xmlns="http://www.w3.org/2000/svg">'
+    '<ellipse cx="10" cy="14" rx="8" ry="12" fill="#3a2510"/>'
+    '<line x1="10" y1="2" x2="10" y2="26" stroke="#5a3a1a" stroke-width="0.8" opacity="0.5"/>'
+    '<path d="M4 8 C3 10 3 14 4 18" stroke="#4a3015" stroke-width="0.6" opacity="0.4"/>'
+    '<path d="M16 8 C17 10 17 14 16 18" stroke="#4a3015" stroke-width="0.6" opacity="0.4"/>'
     '</svg>'
-)
-
-pod_uri = 'data:image/svg+xml;charset=utf-8,' + POD_HERO.replace('"', "'").replace('#', '%23')
-
-# Bento icons inline
-def bento_icon(svg, size="22px"):
-    uri = 'data:image/svg+xml;charset=utf-8,' + svg.replace('"', "'").replace('#', '%23')
-    return f'<img src="{uri}" width="{size}" height="{size}" style="display:block;margin:0 auto"/>'
-
-ICO_ARCH = (
-    '<svg viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">'
-    '<rect x="2" y="9" width="4" height="10" rx="1" fill="%23c19a6b" opacity="0.4"/>'
-    '<rect x="9" y="5" width="4" height="14" rx="1" fill="%23c19a6b" opacity="0.7"/>'
-    '<rect x="16" y="2" width="4" height="17" rx="1" fill="%23c19a6b"/>'
-    '<line x1="2" y1="20" x2="20" y2="20" stroke="%238b5e2a" stroke-width="1.2"/>'
-    '</svg>'
-)
-ICO_RES = (
-    '<svg viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">'
-    '<rect x="3" y="3" width="16" height="16" rx="2" stroke="%23c19a6b" stroke-width="1.3"/>'
-    '<line x1="3" y1="11" x2="19" y2="11" stroke="%238b5e2a" stroke-width="0.8" opacity="0.5"/>'
-    '<line x1="11" y1="3" x2="11" y2="19" stroke="%238b5e2a" stroke-width="0.8" opacity="0.5"/>'
-    '<circle cx="11" cy="11" r="3.5" fill="none" stroke="%23d4a574" stroke-width="1.2"/>'
-    '<circle cx="11" cy="11" r="1.2" fill="%23d4a574"/>'
-    '</svg>'
-)
-ICO_CLS = (
-    '<svg viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">'
-    '<circle cx="7.5" cy="11" r="4.5" fill="none" stroke="%2355cc65" stroke-width="1.3"/>'
-    '<circle cx="14.5" cy="11" r="4.5" fill="none" stroke="%23ee5050" stroke-width="1.3"/>'
-    '<path d="M11 8.5 C11 8.5 10 11 11 13.5" stroke="%23c19a6b" stroke-width="0.9" stroke-linecap="round" opacity="0.5"/>'
-    '</svg>'
-)
-ICO_YR = (
-    '<svg viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">'
-    '<rect x="3" y="5" width="16" height="15" rx="2" stroke="%23c19a6b" stroke-width="1.3"/>'
-    '<line x1="3" y1="9" x2="19" y2="9" stroke="%238b5e2a" stroke-width="1" opacity="0.5"/>'
-    '<line x1="7" y1="3" x2="7" y2="7" stroke="%23c19a6b" stroke-width="1.4" stroke-linecap="round"/>'
-    '<line x1="15" y1="3" x2="15" y2="7" stroke="%23c19a6b" stroke-width="1.4" stroke-linecap="round"/>'
-    '<circle cx="11" cy="14" r="1.5" fill="%23d4a574"/>'
-    '</svg>'
-)
+).replace('"', "'").replace('#', '%23')
 
 st.markdown(
-    '<div class="hero"><div class="hero-inner">'
-    f'<img class="hero-pod" src="{pod_uri}" alt=""/>'
-    '<div class="hero-eyebrow">// Comalcalco, Tabasco · México</div>'
-    '<div class="hero-title">CacaoVision</div>'
-    '<div class="hero-desc">Detección de <em>Moniliophthora roreri</em> en mazorcas de cacao mediante inteligencia artificial.</div>'
-    '<div class="bento">'
-    f'<div class="bc"><div class="bc-icon">{bento_icon(ICO_ARCH)}</div><div class="bc-val">YOLOv11m</div><div class="bc-lbl">Arquitectura</div></div>'
-    f'<div class="bc"><div class="bc-icon">{bento_icon(ICO_RES)}</div><div class="bc-val">512 px</div><div class="bc-lbl">Resolución</div></div>'
-    f'<div class="bc"><div class="bc-icon">{bento_icon(ICO_CLS)}</div><div class="bc-val">2 clases</div><div class="bc-lbl">Sano · Moniliasis</div></div>'
-    f'<div class="bc"><div class="bc-icon">{bento_icon(ICO_YR)}</div><div class="bc-val">2026</div><div class="bc-lbl">Versión</div></div>'
+    '<div class="bg-layer">'
+    '<div class="glow glow-1"></div>'
+    '<div class="glow glow-2"></div>'
     '</div>'
-    '</div></div>',
+    '<div class="beans">'
+    + ''.join(
+        f'<div class="bean"><svg width="20" height="28" viewBox="0 0 20 28" fill="none" xmlns="http://www.w3.org/2000/svg">'
+        f'<ellipse cx="10" cy="14" rx="8" ry="12" fill="%233a2510"/>'
+        f'<line x1="10" y1="2" x2="10" y2="26" stroke="%235a3a1a" stroke-width="0.8" opacity="0.5"/>'
+        f'<path d="M4 8 C3 10 3 14 4 18" stroke="%234a3015" stroke-width="0.6" opacity="0.4"/>'
+        f'<path d="M16 8 C17 10 17 14 16 18" stroke="%234a3015" stroke-width="0.6" opacity="0.4"/>'
+        f'</svg></div>'
+        for _ in range(6)
+    )
+    + '</div>',
     unsafe_allow_html=True,
 )
 
 
-# ─────────────────────────────────────────────────────────────────────
+# ═════════════════════════════════════════════════════════════════════
+# GRECA + HERO
+# ═════════════════════════════════════════════════════════════════════
+st.markdown('<div class="greca"><div class="greca-inner"></div></div>', unsafe_allow_html=True)
+
+st.markdown(
+    '<div class="hero">'
+    '<div class="hero-location"><span class="live-dot"></span> Comalcalco, Tabasco · México</div>'
+    '<div class="hero-title">CacaoVision</div>'
+    '<div class="hero-sub">Detección inteligente de <em>Moniliophthora roreri</em> en mazorcas de cacao mediante visión por computadora.</div>'
+    '<div class="stats">'
+    '<div class="stat"><div class="stat-val">YOLOv11m</div><div class="stat-lbl">Arquitectura</div></div>'
+    '<div class="stat"><div class="stat-val">384px</div><div class="stat-lbl">Resolución</div></div>'
+    '<div class="stat"><div class="stat-val">Binario</div><div class="stat-lbl">Sano · Moniliasis</div></div>'
+    '<div class="stat"><div class="stat-val">2026</div><div class="stat-lbl">Versión</div></div>'
+    '</div>'
+    '</div>',
+    unsafe_allow_html=True,
+)
+
+st.markdown('<div class="greca"><div class="greca-inner"></div></div>', unsafe_allow_html=True)
+
+
+# ═════════════════════════════════════════════════════════════════════
 # MODELO
-# ─────────────────────────────────────────────────────────────────────
+# ═════════════════════════════════════════════════════════════════════
 @st.cache_resource
 def load_model(path):
     if os.path.exists(path):
@@ -603,165 +750,224 @@ if model is None:
     st.stop()
 
 
-# ─────────────────────────────────────────────────────────────────────
-# TABS
-# ─────────────────────────────────────────────────────────────────────
-diag_ico = svg_img(ICO_DIAG, "0.85rem")
-met_ico  = svg_img(ICO_METRICS, "0.85rem")
-abo_ico  = svg_img(ICO_ABOUT, "0.85rem")
+# ═════════════════════════════════════════════════════════════════════
+# GAUGE HELPER
+# ═════════════════════════════════════════════════════════════════════
+def gauge(pct, label, cls):
+    r = 26
+    circ = 2 * 3.14159 * r
+    off = circ * (1 - pct / 100)
+    return (
+        f'<div class="gauge">'
+        f'<svg viewBox="0 0 60 60">'
+        f'<circle class="g-bg" cx="30" cy="30" r="{r}"/>'
+        f'<circle class="g-fill gf-{cls}" cx="30" cy="30" r="{r}" '
+        f'stroke-dasharray="{circ:.1f}" stroke-dashoffset="{off:.1f}"/>'
+        f'</svg>'
+        f'<div class="g-center">'
+        f'<div class="g-pct gp-{cls}">{pct:.0f}%</div>'
+        f'<div class="g-lbl">{label}</div>'
+        f'</div></div>'
+    )
 
+
+# ═════════════════════════════════════════════════════════════════════
+# TABS
+# ═════════════════════════════════════════════════════════════════════
 tab1, tab2, tab3 = st.tabs([
-    f"  DIAGNÓSTICO  ",
-    f"  MÉTRICAS  ",
-    f"  ACERCA DE  ",
+    "  DIAGNÓSTICO  ",
+    "  MÉTRICAS  ",
+    "  ACERCA DE  ",
 ])
 
 
 # ─────────────────────────────────────────────────────────────────────
-# TAB 1 · DIAGNÓSTICO
+# TAB 1 — DIAGNÓSTICO
 # ─────────────────────────────────────────────────────────────────────
 with tab1:
-    st.markdown('<div class="main-pad">', unsafe_allow_html=True)
-    uploaded_files = st.file_uploader(
+    st.markdown('<div class="content">', unsafe_allow_html=True)
+
+    uploaded = st.file_uploader(
         "Arrastra o selecciona imágenes de mazorcas de cacao",
         type=["jpg", "jpeg", "png", "webp"],
         accept_multiple_files=True,
         label_visibility="collapsed",
     )
 
-    if not uploaded_files:
-        pod_dim_uri = 'data:image/svg+xml;charset=utf-8,' + POD_HERO.replace('"', "'").replace('#', '%23')
+    if not uploaded:
+        pod_svg_raw = (
+            '<svg viewBox="0 0 64 80" fill="none" xmlns="http://www.w3.org/2000/svg">'
+            '<ellipse cx="32" cy="48" rx="18" ry="26" fill="#d4a574" opacity="0.6"/>'
+            '<path d="M32 22 C32 22 25 14 18 11" stroke="#e8c49a" stroke-width="2" stroke-linecap="round"/>'
+            '<path d="M32 22 C32 22 39 15 46 12" stroke="#e8c49a" stroke-width="2" stroke-linecap="round"/>'
+            '<line x1="32" y1="22" x2="32" y2="74" stroke="#a07848" stroke-width="1.8" opacity="0.4"/>'
+            '<path d="M16 38 C14 44 14 54 16 62" stroke="#e8c49a" stroke-width="1.2" opacity="0.25"/>'
+            '<path d="M48 38 C50 44 50 54 48 62" stroke="#e8c49a" stroke-width="1.2" opacity="0.25"/>'
+            '</svg>'
+        )
+        pod_uri = "data:image/svg+xml;charset=utf-8," + pod_svg_raw.replace('"', "'").replace('#', '%23')
         st.markdown(
-            f'<div class="up-prompt">'
-            f'<img class="up-pod" src="{pod_dim_uri}" alt=""/>'
-            f'<div class="up-text">Arrastra una o varias imágenes de mazorcas<br>para analizar su estado fitosanitario.</div>'
-            f'<div class="up-hint">JPG · PNG · WEBP · múltiples archivos</div>'
+            f'<div class="empty">'
+            f'<img class="empty-pod" src="{pod_uri}" alt=""/>'
+            f'<div class="empty-msg">Arrastra una o varias imágenes de mazorcas<br>para analizar su estado fitosanitario</div>'
+            f'<div class="empty-hint">JPG · PNG · WEBP · múltiples archivos</div>'
             f'</div>',
             unsafe_allow_html=True,
         )
     else:
-        with st.spinner("Analizando imágenes…"):
-            time.sleep(0.15)
+        with st.spinner("Analizando…"):
+            time.sleep(0.1)
 
-        n_sano = n_mono = n_doubt = 0
-        results_data = []
+        n_s = n_m = n_d = 0
+        results = []
 
-        for f in uploaded_files:
+        for f in uploaded:
             img = Image.open(f).convert("RGB")
             res = model.predict(img, verbose=False)[0]
             names = res.names
             probs = res.probs.data.tolist()
 
-            idx_sano = next((k for k, v in names.items() if v.lower() == "sano"), 0)
-            idx_mono = next((k for k, v in names.items() if v.lower() != "sano"), 1)
+            idx_s = next((k for k, v in names.items() if v.lower() == "sano"), 0)
+            idx_m = next((k for k, v in names.items() if v.lower() != "sano"), 1)
 
-            conf_s = probs[idx_sano] * 100
-            conf_m = probs[idx_mono] * 100
+            cs = probs[idx_s] * 100
+            cm = probs[idx_m] * 100
 
-            if conf_m >= UMBRAL_MONILIASIS:
-                diag = "mono";  n_mono  += 1
-            elif conf_s >= UMBRAL_SANO:
-                diag = "sano";  n_sano  += 1
+            if cm >= UMBRAL_MONILIASIS:
+                d = "mono"; n_m += 1
+            elif cs >= UMBRAL_SANO:
+                d = "sano"; n_s += 1
             else:
-                diag = "doubt"; n_doubt += 1
+                d = "doubt"; n_d += 1
 
-            results_data.append((img, conf_s, conf_m, diag))
+            results.append((img, cs, cm, d, f.name))
 
-        total = len(uploaded_files)
-        sano_icon_s  = svg_img(ICO_SANO,  "0.75rem")
-        mono_icon_s  = svg_img(ICO_MONO,  "0.75rem")
-        doubt_icon_s = svg_img(ICO_DOUBT, "0.75rem")
-
-        doubt_part = (
-            f'<span>{doubt_icon_s} {n_doubt} incierta{"s" if n_doubt != 1 else ""}</span>'
-            if n_doubt else ""
-        )
-        st.markdown(
-            f'<div class="res-hdr">'
-            f'<span>{total} imagen{"es" if total != 1 else ""}</span>'
-            f'<span>{sano_icon_s} {n_sano} sana{"s" if n_sano != 1 else ""}</span>'
-            f'<span>{mono_icon_s} {n_mono} con moniliasis</span>'
-            f'{doubt_part}'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
+        total = len(uploaded)
+        parts = [f'<div class="sum-item"><span class="sum-dot d-all"></span>{total} imagen{"es" if total != 1 else ""}</div>']
+        if n_s: parts.append(f'<div class="sum-item"><span class="sum-dot d-sano"></span>{n_s} sana{"s" if n_s != 1 else ""}</div>')
+        if n_m: parts.append(f'<div class="sum-item"><span class="sum-dot d-mono"></span>{n_m} moniliasis</div>')
+        if n_d: parts.append(f'<div class="sum-item"><span class="sum-dot d-doubt"></span>{n_d} incierta{"s" if n_d != 1 else ""}</div>')
+        st.markdown(f'<div class="summary">{"".join(parts)}</div>', unsafe_allow_html=True)
 
         cols = st.columns(3)
-        for i, (img, conf_s, conf_m, diag) in enumerate(results_data):
+        for i, (img, cs, cm, d, fn) in enumerate(results):
             with cols[i % 3]:
-                if diag == "sano":
-                    glow    = "g-sano"
-                    badge   = f'<span class="badge b-sano">{svg_img(ICO_SANO,"0.8rem")} &nbsp;SANO</span>'
-                elif diag == "mono":
-                    glow    = "g-mono"
-                    badge   = f'<span class="badge b-mono">{svg_img(ICO_MONO,"0.8rem")} &nbsp;MONILIASIS</span>'
+                if d == "sano":
+                    rc, sd = "rc-sano", "sd-sano"
+                    badge = '<span class="dbadge db-sano">&#9679; Sano</span>'
+                elif d == "mono":
+                    rc, sd = "rc-mono", "sd-mono"
+                    badge = '<span class="dbadge db-mono">&#9679; Moniliasis</span>'
                 else:
-                    glow    = "g-doubt"
-                    badge   = f'<span class="badge b-doubt">{svg_img(ICO_DOUBT,"0.8rem")} &nbsp;INCIERTO</span>'
+                    rc, sd = "rc-doubt", "sd-doubt"
+                    badge = '<span class="dbadge db-doubt">&#9679; Incierto</span>'
 
-                st.markdown(f'<div class="rcard {glow}">', unsafe_allow_html=True)
-                st.image(img, use_container_width=True)
+                b64 = img_to_b64(img)
+                gs = gauge(cs, "Sano", "s")
+                gm = gauge(cm, "Mono", "m")
+
                 st.markdown(
+                    f'<div class="rcard {rc}">'
+                    f'<div class="rcard-img">'
+                    f'<img src="{b64}" alt="{fn}"/>'
+                    f'<div class="scan"></div>'
+                    f'<div class="status-dot {sd}"></div>'
+                    f'</div>'
                     f'<div class="rcard-body">'
-                    f'<div class="diag">{badge}</div>'
-                    f'<div class="conf-wrap">'
-                    f'<div class="cbar"><span class="cbar-lbl">SANO</span>'
-                    f'<div class="cbar-track"><div class="fill-s" style="width:{conf_s:.1f}%"></div></div>'
-                    f'<span class="cbar-pct">{conf_s:.1f}%</span></div>'
-                    f'<div class="cbar"><span class="cbar-lbl">MONO</span>'
-                    f'<div class="cbar-track"><div class="fill-m" style="width:{conf_m:.1f}%"></div></div>'
-                    f'<span class="cbar-pct">{conf_m:.1f}%</span></div>'
+                    f'<div style="text-align:center;margin-bottom:0.5rem">{badge}</div>'
+                    f'<div class="gauges">{gs}{gm}</div>'
                     f'</div></div>',
                     unsafe_allow_html=True,
                 )
-                st.markdown('</div>', unsafe_allow_html=True)
 
     st.markdown('</div>', unsafe_allow_html=True)
 
 
 # ─────────────────────────────────────────────────────────────────────
-# TAB 2 · MÉTRICAS
+# TAB 2 — MÉTRICAS
 # ─────────────────────────────────────────────────────────────────────
 with tab2:
-    st.markdown('<div class="main-pad">', unsafe_allow_html=True)
-    st.markdown('<div class="met-hdr"><div class="met-title">Resultados del Entrenamiento</div><div class="met-sub">Gráficas y matrices generadas por YOLOv11 durante el fine-tuning del modelo.</div></div>', unsafe_allow_html=True)
+    st.markdown('<div class="content">', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="met-hdr">'
+        '<div class="met-title">Resultados del Entrenamiento</div>'
+        '<div class="met-sub">Gráficas y matrices generadas durante el fine-tuning.</div>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
 
     base = "runs/classify/resultados_cacao/modelo_refinado"
-    plots = [
-        ("Curvas de Entrenamiento",              f"{base}/results.png"),
-        ("Matriz de Confusión",                  f"{base}/confusion_matrix.png"),
-        ("Matriz de Confusión Normalizada",      f"{base}/confusion_matrix_normalized.png"),
+    metrics_info = [
+        (
+            "Curvas de Entrenamiento",
+            f"{base}/results.png",
+            "Muestra la evolución del modelo época por época. "
+            "<b>Train Loss</b> (pérdida de entrenamiento) debe descender de forma estable — indica que el modelo aprende a distinguir las clases. "
+            "<b>Val Accuracy Top-1</b> es el porcentaje de aciertos en imágenes que el modelo nunca vio durante el entrenamiento; "
+            "valores cercanos al 100% indican alta capacidad de generalización. "
+            "Si la val loss sube mientras la train loss baja, el modelo estaría memorizando en lugar de aprender (<em>overfitting</em>). "
+            "Lo ideal es que ambas curvas converjan y se mantengan estables."
+        ),
+        (
+            "Matriz de Confusión",
+            f"{base}/confusion_matrix.png",
+            "Tabla que cruza las predicciones del modelo contra la realidad. "
+            "Cada celda muestra <b>cuántas imágenes</b> fueron clasificadas en cada combinación. "
+            "La diagonal principal (arriba-izq → abajo-der) representa los <b>aciertos</b>: "
+            "imágenes de moniliasis correctamente detectadas y mazorcas sanas correctamente identificadas. "
+            "Las celdas fuera de la diagonal son <b>errores</b>: falsos positivos (sano clasificado como enfermo) "
+            "y falsos negativos (enfermo clasificado como sano). Lo ideal es que solo la diagonal tenga valores."
+        ),
+        (
+            "Matriz de Confusión Normalizada",
+            f"{base}/confusion_matrix_normalized.png",
+            "Misma matriz pero expresada en <b>porcentajes por clase</b> (cada fila suma 100%). "
+            "Esto permite comparar el rendimiento entre clases sin importar cuántas imágenes hay de cada una. "
+            "Un valor de <b>1.00</b> en la diagonal significa que el 100% de las imágenes de esa clase fueron clasificadas correctamente. "
+            "Es la métrica más confiable para evaluar si el modelo funciona igual de bien para mazorcas sanas que para mazorcas con moniliasis."
+        ),
     ]
-    for title, path in plots:
+
+    for title, path, desc in metrics_info:
         if os.path.exists(path):
             with st.expander(title, expanded=True):
                 st.image(path, use_container_width=True)
+                st.markdown(
+                    f'<div style="padding:0.8rem 0.2rem 0.3rem;font-size:0.82rem;'
+                    f'line-height:1.75;color:var(--white-dim);">{desc}</div>',
+                    unsafe_allow_html=True,
+                )
 
     st.markdown('</div>', unsafe_allow_html=True)
 
 
 # ─────────────────────────────────────────────────────────────────────
-# TAB 3 · ACERCA DE
+# TAB 3 — ACERCA DE
 # ─────────────────────────────────────────────────────────────────────
 with tab3:
-    compass_s = svg_img(ICO_ABOUT, "0.75rem")
-    arch_i  = svg_img(ICO_ARCH.replace('%23','#'), "1.1rem")
-    res_i   = svg_img(ICO_RES.replace('%23','#'),  "1.1rem")
-    cls_i   = svg_img(ICO_CLS.replace('%23','#'),  "1.1rem")
-    yr_i    = svg_img(ICO_YR.replace('%23','#'),   "1.1rem")
-
     st.markdown(
-        '<div class="about-outer"><div class="about">'
-        f'<div class="about-eyebrow">{compass_s} Proyecto Capstone · 2026</div>'
-        '<div class="about-title">Sobre CacaoVision</div>'
-        '<div class="about-body">Sistema de clasificación binaria para la detección temprana de <em>Moniliophthora roreri</em> en mazorcas de cacao. Diseñado para apoyar a productores de la región cacaotera de Comalcalco, Tabasco, reduciendo pérdidas de cosecha mediante diagnóstico visual automatizado.</div>'
-        '<div class="about-body">El modelo aplica fine-tuning sobre pesos ImageNet de YOLOv11m-cls, especializándolo en reconocer patrones visuales de moniliasis: decoloración parda, textura pulverulenta blanca y necrosis superficial en la mazorca.</div>'
+        '<div class="content"><div class="about">'
+        '<div class="about-tag">Proyecto Capstone · 2026</div>'
+        '<div class="about-h">Sobre CacaoVision</div>'
+        '<div class="about-p">'
+        'Sistema de clasificación binaria para la detección temprana de '
+        '<em>Moniliophthora roreri</em> en mazorcas de cacao. Diseñado para apoyar '
+        'a productores de la región cacaotera de Comalcalco, Tabasco — cuna del chocolate '
+        'en Mesoamérica y sitio de la ciudad Maya más occidental.'
+        '</div>'
+        '<div class="about-p">'
+        'El modelo aplica fine-tuning sobre pesos ImageNet de YOLOv11m-cls, '
+        'especializándolo en reconocer patrones visuales de moniliasis: decoloración parda, '
+        'textura pulverulenta blanca y necrosis superficial.'
+        '</div>'
         '<div class="about-hr"></div>'
-        '<div class="about-grid">'
-        f'<div class="aitem"><div class="aitem-icon">{arch_i}</div><div><div class="aitem-k">Arquitectura</div><div class="aitem-v">YOLOv11m-cls</div></div></div>'
-        f'<div class="aitem"><div class="aitem-icon">{res_i}</div><div><div class="aitem-k">Resolución entrada</div><div class="aitem-v">512 × 512 px</div></div></div>'
-        f'<div class="aitem"><div class="aitem-icon">{cls_i}</div><div><div class="aitem-k">Clases</div><div class="aitem-v">Sano · Moniliasis</div></div></div>'
-        f'<div class="aitem"><div class="aitem-icon">{yr_i}</div><div><div class="aitem-k">Región</div><div class="aitem-v">Comalcalco, Tabasco</div></div></div>'
+        '<div class="specs">'
+        '<div class="spec"><div class="spec-k">Arquitectura</div><div class="spec-v">YOLOv11m-cls</div></div>'
+        '<div class="spec"><div class="spec-k">Resolución</div><div class="spec-v">384 × 384 px</div></div>'
+        '<div class="spec"><div class="spec-k">Clases</div><div class="spec-v">Sano · Moniliasis</div></div>'
+        '<div class="spec"><div class="spec-k">Región</div><div class="spec-v">Comalcalco, Tabasco</div></div>'
+        '<div class="spec"><div class="spec-k">Optimizador</div><div class="spec-v">AdamW · Cosine LR</div></div>'
+        '<div class="spec"><div class="spec-k">Framework</div><div class="spec-v">Ultralytics · PyTorch</div></div>'
         '</div>'
         '</div></div>',
         unsafe_allow_html=True,
@@ -772,9 +978,10 @@ with tab3:
 # FOOTER
 # ─────────────────────────────────────────────────────────────────────
 st.markdown(
-    '<div class="site-footer">'
-    '<div class="ft-org">Proyecto Capstone</div>'
-    '<div class="ft-copy">Visión por Computadora · Comalcalco, Tabasco · 2026</div>'
+    '<div class="greca"><div class="greca-inner"></div></div>'
+    '<div class="foot">'
+    '<div class="foot-brand">CacaoVision</div>'
+    '<div class="foot-copy">Visión por Computadora · Comalcalco, Tabasco · 2026</div>'
     '</div>',
     unsafe_allow_html=True,
 )
